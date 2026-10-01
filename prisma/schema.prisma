@@ -1,0 +1,135 @@
+// Fobs (Monad) — data model.
+//
+// The whole social + trading surface is built from one activity graph: Users
+// (wallet = identity), the Tokens they trade, the Trades themselves (the feed,
+// profiles and token activity all read from this), Positions (portfolio), and
+// Follows (the social edges). Fobs Signal / trader stats are COMPUTED from
+// Trades at read time (lib/signal.ts), not stored.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum TradeSource {
+  SEED // backfilled demo activity
+  SWAP // Monad-native swap
+  CROSS_CHAIN // funded from another chain, settled on Monad
+}
+
+enum NotificationType {
+  FOLLOW
+  NOTABLE_TRADE
+  TRADE_FILLED
+}
+
+model User {
+  id          String   @id @default(cuid())
+  address     String   @unique // wallet address, lowercased — the identity
+  username    String   @unique
+  displayName String
+  avatar      String?
+  bio         String?
+  isNotable   Boolean  @default(false) // powers "notable trader" detection
+  createdAt   DateTime @default(now())
+
+  trades        Trade[]
+  positions     Position[]
+  following     Follow[]       @relation("follower")
+  followers     Follow[]       @relation("following")
+  notifications Notification[] @relation("recipient")
+  actedOn       Notification[] @relation("actor")
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model Token {
+  symbol    String   @id // e.g. "MONAI" — natural key, uppercase
+  name      String
+  address   String
+  chain     String   @default("monad")
+  decimals  Int      @default(18)
+  logo      String?
+  priceUsd  Float
+  change24h Float    @default(0)
+  marketCap Float    @default(0)
+  volume24h Float    @default(0)
+  holders   Int      @default(0)
+  createdAt DateTime @default(now())
+
+  trades    Trade[]
+  positions Position[]
+}
+
+model Trade {
+  id          String      @id @default(cuid())
+  userId      String
+  tokenSymbol String
+  side        TradeSide
+  amountToken Float // token units
+  amountUsd   Float // notional at execution
+  priceUsd    Float // token price at execution
+  chain       String      @default("monad")
+  fromChain   String? // funding source chain for cross-chain buys
+  txHash      String?
+  source      TradeSource @default(SWAP)
+  createdAt   DateTime    @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token Token @relation(fields: [tokenSymbol], references: [symbol], onDelete: Cascade)
+
+  @@index([tokenSymbol, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+model Position {
+  id            String   @id @default(cuid())
+  userId        String
+  tokenSymbol   String
+  amount        Float // current token units held
+  avgEntryUsd   Float // average entry price
+  realizedPnlUsd Float   @default(0)
+  updatedAt     DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token Token @relation(fields: [tokenSymbol], references: [symbol], onDelete: Cascade)
+
+  @@unique([userId, tokenSymbol])
+  @@index([userId])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  actorId     String?
+  type        NotificationType
+  tokenSymbol String?
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("recipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, read])
+}

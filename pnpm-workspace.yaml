@@ -1,0 +1,30 @@
+allowBuilds:
+  '@prisma/client': set this to true or false
+  '@prisma/engines': set this to true or false
+  bufferutil: set this to true or false
+  esbuild: set this to true or false
+  keccak: set this to true or false
+  prisma: set this to true or false
+  utf-8-validate: set this to true or false
+
+# pnpm 11+ reads build-script allowlist and overrides from here (no longer the
+# "pnpm" field in package.json). Prisma needs its engine build to generate the
+# client; the native-addon builds are the usual optional transitive deps.
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - esbuild
+  - keccak
+  - bufferutil
+  - utf-8-validate
+
+overrides:
+  framer-motion: 13.4.3
+
+# Don't run the implicit `pnpm install` dep-status check before `pnpm run`, and
+# don't treat gated build scripts as a hard install error. The build allowlist
+# above covers what actually needs to build (Prisma); the rest have prebuilt
+# binaries / graceful fallbacks.
+verifyDepsBeforeRun: false
+strictDepBuilds: false
