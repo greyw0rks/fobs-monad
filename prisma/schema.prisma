@@ -1,10 +1,14 @@
 // Fobs (Monad) — data model.
 //
-// The whole social + trading surface is built from one activity graph: Users
-// (wallet = identity), the Tokens they trade, the Trades themselves (the feed,
-// profiles and token activity all read from this), Positions (portfolio), and
-// Follows (the social edges). Fobs Signal / trader stats are COMPUTED from
-// Trades at read time (lib/signal.ts), not stored.
+// The social + trading surface is built from one activity graph: Users (wallet =
+// identity), the Tokens they trade, the Trades themselves (feed, profiles and
+// token activity all read from this), Positions, and Follows.
+//
+// HONESTY RULE: no market numbers live in the DB. Token rows hold IDENTITY ONLY
+// (address + decimals) purely so Trades can hold a foreign key; prices, 24h
+// change, volume and market cap are fetched live from the market provider at
+// request time (lib/market.ts) and never persisted. Fobs Signal and trader stats
+// are COMPUTED from Trades at read time (lib/signal.ts), not stored.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,7 +16,14 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Runtime connection. On Neon this is the POOLED endpoint: the pooler queues
+  // client connections through a compute wake-up instead of failing them, which
+  // matters because a scale-to-zero compute otherwise refuses the first
+  // connection after an idle period (P1001).
   url      = env("DATABASE_URL")
+  // DDL connection (db push / migrate). The pooler must not be used for
+  // schema changes.
+  directUrl = env("DIRECT_URL")
 }
 
 enum TradeSide {
@@ -21,8 +32,7 @@ enum TradeSide {
 }
 
 enum TradeSource {
-  SEED // backfilled demo activity
-  SWAP // Monad-native swap
+  SWAP // Monad-native swap, user-signed
   CROSS_CHAIN // funded from another chain, settled on Monad
 }
 
@@ -39,7 +49,7 @@ model User {
   displayName String
   avatar      String?
   bio         String?
-  isNotable   Boolean  @default(false) // powers "notable trader" detection
+  isNotable   Boolean  @default(false) // derived signal in a later milestone; never seeded
   createdAt   DateTime @default(now())
 
   trades        Trade[]
@@ -63,18 +73,14 @@ model Follow {
   @@index([followingId])
 }
 
+// Identity only — every market figure is fetched live, never stored here.
 model Token {
-  symbol    String   @id // e.g. "MONAI" — natural key, uppercase
+  symbol    String   @id // e.g. "MON" — natural key, uppercase
   name      String
-  address   String
+  address   String // ERC20 contract on Monad (WMON for native MON)
   chain     String   @default("monad")
   decimals  Int      @default(18)
   logo      String?
-  priceUsd  Float
-  change24h Float    @default(0)
-  marketCap Float    @default(0)
-  volume24h Float    @default(0)
-  holders   Int      @default(0)
   createdAt DateTime @default(now())
 
   trades    Trade[]
@@ -86,12 +92,12 @@ model Trade {
   userId      String
   tokenSymbol String
   side        TradeSide
-  amountToken Float // token units
-  amountUsd   Float // notional at execution
-  priceUsd    Float // token price at execution
+  amountToken Float // token units, derived from the verified receipt
+  amountUsd   Float // notional at execution, derived from the verified receipt
+  priceUsd    Float // effective fill price (amountUsd / amountToken)
   chain       String      @default("monad")
   fromChain   String? // funding source chain for cross-chain buys
-  txHash      String?
+  txHash      String? @unique // the real on-chain tx; unique so records are idempotent
   source      TradeSource @default(SWAP)
   createdAt   DateTime    @default(now())
 
@@ -103,14 +109,17 @@ model Trade {
   @@index([createdAt])
 }
 
+// Written only once real trade history can be reconstructed (indexer milestone).
+// Until then the portfolio reads live on-chain balances and shows no PnL rather
+// than a fabricated average entry.
 model Position {
-  id            String   @id @default(cuid())
-  userId        String
-  tokenSymbol   String
-  amount        Float // current token units held
-  avgEntryUsd   Float // average entry price
-  realizedPnlUsd Float   @default(0)
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  userId         String
+  tokenSymbol    String
+  amount         Float // current token units held
+  avgEntryUsd    Float // average entry price
+  realizedPnlUsd Float    @default(0)
+  updatedAt      DateTime @updatedAt
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   token Token @relation(fields: [tokenSymbol], references: [symbol], onDelete: Cascade)

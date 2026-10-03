@@ -68,21 +68,27 @@ export function FeedView({ scope = "global" }: { scope?: "global" | "following" 
 
       {feed.isLoading && <div className="p-8 text-center muted">Loading feed…</div>}
 
-      {!feed.isLoading && trades.length === 0 && tab === "global" && (
+      {/* An unreachable feed is not an empty feed — don't claim "No activity yet". */}
+      {feed.isError && (
+        <div className="p-8 text-center muted">Couldn&apos;t reach the feed right now. Retrying…</div>
+      )}
+
+      {!feed.isLoading && !feed.isError && trades.length === 0 && tab === "global" && (
         <div className="p-8 text-center">
           <div className="muted">No activity yet.</div>
           <div className="faint mt-1" style={{ fontSize: "var(--t-sm)" }}>
-            Run <span className="num">npm run seed</span> to populate the demo activity graph.
+            Trades appear here as wallets swap on Monad.
           </div>
         </div>
       )}
 
       <AnimatePresence initial={false}>
-        {trades.map((t) => (
-          <SlideIn key={t.id}>
-            <TradeRow trade={t} onTrade={openTrade} />
-          </SlideIn>
-        ))}
+        {!feed.isError &&
+          trades.map((t) => (
+            <SlideIn key={t.id}>
+              <TradeRow trade={t} onTrade={openTrade} />
+            </SlideIn>
+          ))}
       </AnimatePresence>
     </div>
   );

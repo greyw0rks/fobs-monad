@@ -58,15 +58,15 @@ export function TokenView({ symbol }: { symbol: string }) {
           <div className="grid grid-cols-3 gap-3">
             <Stat label="Market cap" value={compactMoney(token.marketCap)} />
             <Stat label="24h volume" value={compactMoney(token.volume24h)} />
-            <Stat label="Holders" value={compactNumber(token.holders)} />
+            <Stat label="Liquidity" value={compactMoney(token.liquidity)} />
           </div>
 
           {/* Chart */}
           <div className="card p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="eyebrow">Price · 24h</span>
+              <span className="eyebrow">Price · live</span>
               <span className="faint" style={{ fontSize: "var(--t-xs)" }}>
-                demo series
+                top Monad pool
               </span>
             </div>
             <PriceChart symbol={token.symbol} up={up} />

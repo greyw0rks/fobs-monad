@@ -42,7 +42,7 @@ export function ProfileView({ username }: { username: string }) {
   if (isLoading) return <div className="p-8 text-center muted">Loading @{username}…</div>;
   if (isError || !data) return <div className="p-8 text-center muted">Trader @{username} not found.</div>;
 
-  const { trader, followers, following, activity, recentTrades, isFollowedByViewer } = data;
+  const { trader, followers, following, holdings, recentTrades, isFollowedByViewer } = data;
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 lg:p-6 flex flex-col gap-6">
@@ -75,32 +75,29 @@ export function ProfileView({ username }: { username: string }) {
         )}
       </div>
 
-      {/* Activity */}
-      {activity.length > 0 && (
+      {/* Live on-chain holdings */}
+      {holdings.length > 0 && (
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b hairline eyebrow">Holdings</div>
-          {activity.map((a) => (
+          {holdings.map((h) => (
             <Link
-              key={a.symbol}
-              href={`/token/${a.symbol}` as Route}
+              key={h.token.symbol}
+              href={`/token/${h.token.symbol}` as Route}
               className="flex items-center gap-3 px-4 py-3 border-b hairline row-hover"
             >
-              <Avatar name={a.symbol} logo={a.logo} size={30} />
+              <Avatar name={h.token.symbol} logo={h.token.logo} size={30} />
               <div className="flex-1 min-w-0">
                 <div className="num" style={{ fontWeight: 700 }}>
-                  {a.symbol}
+                  {h.token.symbol}
                 </div>
                 <div className="muted" style={{ fontSize: "var(--t-xs)" }}>
-                  <Num>{qty(a.amount)}</Num> @ <Num>{price(a.avgEntryUsd)}</Num>
+                  <Num>{qty(h.amount)}</Num> @ <Num>{price(h.token.priceUsd)}</Num>
                 </div>
               </div>
               <div className="text-right">
-                <Num style={{ fontWeight: 600 }}>{money(a.valueUsd)}</Num>
-                <div className={a.unrealizedPnlUsd >= 0 ? "up" : "down"} style={{ fontSize: "var(--t-xs)" }}>
-                  <Num>
-                    {a.unrealizedPnlUsd >= 0 ? "+" : ""}
-                    {money(a.unrealizedPnlUsd)} ({pct(a.unrealizedPnlPct)})
-                  </Num>
+                <Num style={{ fontWeight: 600 }}>{money(h.valueUsd)}</Num>
+                <div className={h.token.change24h >= 0 ? "up" : "down"} style={{ fontSize: "var(--t-xs)" }}>
+                  <Num>{pct(h.token.change24h)}</Num>
                 </div>
               </div>
             </Link>

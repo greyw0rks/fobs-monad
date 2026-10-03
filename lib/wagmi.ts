@@ -1,36 +1,25 @@
-// wagmi config — Monad testnet, browser-injected wallets only.
+// wagmi config — Monad mainnet, browser-injected wallets only.
 //
-// Monad is not a built-in wagmi chain, so we define it with viem's
-// defineChain. The injected() connector covers MetaMask / Rabbit / OKX and
-// anything else that injects window.ethereum — matching Monad's current
-// ecosystem without pulling in extra wallet abstractions.
+// Monad is not a built-in wagmi chain, so the chain is defined once in
+// lib/chain.ts (shared with server-side viem) and imported here. The injected()
+// connector covers MetaMask / Rabby / OKX and anything else that injects
+// window.ethereum — matching Monad's ecosystem without extra wallet SDKs.
+//
+// Trading moves real funds, so the app enforces chainId 143 before any swap
+// (see connect-wallet-button.tsx). The server never holds keys or signs; every
+// approval/swap is a client-side wallet signature.
 
 import { http, createConfig } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { defineChain } from "viem";
+import { monad, MONAD_CHAIN_ID, MONAD_RPC_URL } from "./chain";
 
-const rpcUrl = process.env.NEXT_PUBLIC_MONAD_RPC_URL ?? "https://testnet-rpc.monad.xyz";
-
-export const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
-  nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
-  rpcUrls: {
-    default: { http: [rpcUrl] }
-  },
-  blockExplorers: {
-    default: { name: "Monad Explorer", url: "https://testnet.monadexplorer.com" }
-  },
-  testnet: true
-});
+export { monad, MONAD_CHAIN_ID };
 
 export const wagmiConfig = createConfig({
-  chains: [monadTestnet],
+  chains: [monad],
   connectors: [injected()],
   transports: {
-    [monadTestnet.id]: http(rpcUrl)
+    [monad.id]: http(MONAD_RPC_URL)
   },
   ssr: true
 });
-
-export const MONAD_CHAIN_ID = monadTestnet.id; // 10143

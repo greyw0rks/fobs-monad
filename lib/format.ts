@@ -62,14 +62,14 @@ export function initials(name: string): string {
 }
 
 // ── Monad explorer ───────────────────────────────────────────────────────
-const EXPLORER = "https://testnet.monadexplorer.com";
+import { EXPLORER_URL } from "./chain";
 
 export function txUrl(hash: string): string {
-  return `${EXPLORER}/tx/${hash}`;
+  return `${EXPLORER_URL}/tx/${hash}`;
 }
 
 export function addressUrl(address: string): string {
-  return `${EXPLORER}/address/${address}`;
+  return `${EXPLORER_URL}/address/${address}`;
 }
 
 export function shortHash(hash: string): string {

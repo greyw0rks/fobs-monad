@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFeed } from "@/lib/feed";
-import { viewerIdFromAddress } from "@/lib/viewer";
+import { viewerQuery } from "@/lib/viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,18 @@ export async function GET(request: Request) {
   const address = searchParams.get("address");
   const scope = searchParams.get("scope") ?? "global";
 
-  const viewerId = scope === "following" ? await viewerIdFromAddress(address) : null;
-  const trades = await getFeed({ viewerId, limit: 40 });
-  return NextResponse.json({ trades });
+  if (scope === "following") {
+    const viewer = await viewerQuery(address);
+    // Resolving the viewer failed, so we can't know who "following" means.
+    // Serving the global feed here would silently show a different feed than
+    // the one that was asked for.
+    if (!viewer.ok) {
+      return NextResponse.json({ error: "Feed is temporarily unavailable" }, { status: 503 });
+    }
+    // Connected, but no account yet — following nothing is genuinely empty.
+    if (!viewer.data) return NextResponse.json({ trades: [] });
+    return NextResponse.json({ trades: await getFeed({ viewerId: viewer.data, limit: 40 }) });
+  }
+
+  return NextResponse.json({ trades: await getFeed({ limit: 40 }) });
 }

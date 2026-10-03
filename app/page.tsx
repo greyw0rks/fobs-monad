@@ -35,8 +35,8 @@ export default function Landing() {
             Act on it instantly.
           </h1>
           <p className="muted mx-auto mt-5" style={{ fontSize: "var(--t-lg)", maxWidth: 560 }}>
-            Discover tokens through other traders&apos; activity, fund from any chain, and execute on Monad — without
-            ever thinking about a bridge.
+            Discover tokens through other traders&apos; activity and execute real swaps on Monad — signed in your own
+            wallet, with every number live from the chain.
           </p>
           <div className="flex items-center justify-center gap-3 mt-8">
             <Link href={"/feed" as Route} className="btn btn-primary" style={{ height: 44, padding: "0 20px" }}>
@@ -53,7 +53,7 @@ export default function Landing() {
       <section className="mx-auto max-w-4xl px-5 pb-20">
         <div className="eyebrow text-center mb-6">One magical loop</div>
         <div className="flex flex-wrap items-center justify-center gap-2 num muted" style={{ fontSize: "var(--t-sm)" }}>
-          {["Discover a trade", "See why it matters", "Fund from any chain", "Execute on Monad", "Share it"].map(
+          {["Discover a trade", "See why it matters", "Execute on Monad", "Share it"].map(
             (step, i, arr) => (
               <span key={step} className="flex items-center gap-2">
                 <span className="chip" style={{ color: "var(--ink)" }}>
@@ -67,13 +67,13 @@ export default function Landing() {
 
         <div className="grid sm:grid-cols-3 gap-4 mt-12">
           <Feature icon={<Radio size={18} />} title="Discover" body="A live feed of real on-chain activity — trending tokens, notable buys, trader profiles." />
-          <Feature icon={<Zap size={18} />} title="Trade" body="Monad-native swaps with cross-chain funding abstracted away. The bridge is infrastructure; the trade is the product." />
+          <Feature icon={<Zap size={18} />} title="Trade" body="Real Monad-native swaps, routed by 0x and signed in your own wallet. Approve and execute without ever handing over a key." />
           <Feature icon={<Users size={18} />} title="Follow" body="Follow wallets, watch what they trade, and share your own moves with a card built to travel." />
         </div>
       </section>
 
       <footer className="border-t hairline py-8 text-center muted" style={{ fontSize: "var(--t-sm)" }}>
-        fobs · a social trading terminal for Monad · demo build
+        fobs · a social trading terminal for Monad · live on mainnet
       </footer>
     </div>
   );

@@ -9,7 +9,7 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", displ
 export const metadata: Metadata = {
   title: "fobs — social trading terminal for Monad",
   description:
-    "Discover tokens through other traders, fund from any chain, execute on Monad, share the trade.",
+    "Discover tokens through other traders' real on-chain activity and execute real Monad swaps, signed in your own wallet.",
   openGraph: {
     title: "fobs — social trading terminal for Monad",
     description: "See a trade. Act on it. On Monad."
