@@ -38,7 +38,13 @@ client claims.
   deployment will be grace-period'd then deleted (~10 days) no matter how
   `start_block` is tuned — it is a working proof, not permanent hosting. A
   permanent indexer needs local `envio dev` (Docker) or a paid plan; both are
-  a one-line `ENVIO_INDEXER_URL` swap. See `indexer/README.md`.
+  a one-line `ENVIO_INDEXER_URL` swap. See `indexer/README.md`. **Kuru `Trade`
+  indexing is written and verified against the deployed contract** — Kuru's
+  published ABI is wrong (`uint256 price`, and nothing indexed) and would have
+  indexed zero events — but it is deliberately **not pushed**: a redeploy
+  re-syncs from `start_block` and re-spends the 100k budget from zero, so it
+  would kill the working deployment rather than upgrade it. The `Trade` amounts
+  are stored raw; their scaling is not established.
 - 🟢 **Stage 3 — cross-chain funding: BUILT, verified end-to-end live.** Two
   providers behind one DTO. **Relay is primary** — it is the one that actually
   routes to Monad. **Aurora Intents is the fallback**: its appKey authenticates
@@ -188,9 +194,17 @@ status — with one DTO so the drawer never cares which provider answered.
   step list, then sign-in-own-wallet, then a 6s status poll. Non-transaction
   steps are surfaced, never silently skipped.
 - No custody: the user signs from their wallet; fobs only ever reads.
-- DB: `Trade.source = CROSS_CHAIN` / `fromChain` wiring is still open (a bridged
-  buy is delivered by Relay, not executed through our quote route, so it isn't
-  recorded as a fobs trade yet).
+- DB: `Trade.source = CROSS_CHAIN` / `fromChain` is **wired**. `POST
+  /api/bridge/record` takes the relay `requestId`, reads the **destination hash
+  from Relay's own status** (never from the client), verifies both legs from
+  receipts (`lib/bridge-verify.ts`), and only then writes the trade with
+  `priceUsd = spent / received` — a real fill, not a mark. Idempotent on the
+  destination hash, and a same-asset bridge is refused outright: USDC → USDC is
+  a transfer, not a trade. Both verifiers were exercised against live Monad and
+  Base receipts (ERC20 credit 6/6 exact; native MON credit matched the block's
+  balance delta exactly; origin spend 6/6, including a batch tx where each
+  sender correctly got only its own transfer). What is *not* proven: a real
+  end-to-end bridge, which needs a funded wallet signing a live deposit.
 
 ## Stage 4 — Nansen labels (adapter, honest-empty)
 
@@ -237,11 +251,13 @@ pnpm codegen && pnpm dev
 — set that as `ENVIO_INDEXER_URL` and the feed switches to chain-wide indexing.
 Without Docker the app keeps reading its own recorded trades (honest fallback),
 so nothing is broken meanwhile.
-- `contracts/README.md` and `contracts/FobsRouter.sol` are now stale (they
-  describe the deleted simulated flow, `lib/route.ts`, `/api/trade/execute`) —
-  update or remove as part of this work.
-- Repo has **no git remote** and sits on branch `monad-mainnet-real-trading` —
-  needs a remote before any PR.
+- ~~`contracts/` describes the deleted simulated flow~~ — **removed.** The whole
+  directory (`FobsRouter.sol`, its README, its test) described a settlement
+  router for `lib/route.ts` / `/api/trade/execute`, both long deleted. There is
+  no Fobs contract on the trading path — trades go straight through Kuru/0x,
+  client-signed — so the artifact was misleading rather than merely stale.
+- ~~Repo has **no git remote**~~ — pushed to
+  https://github.com/greyw0rks/fobs-monad (private, default `main`).
 
 ## Suggested order & effort
 

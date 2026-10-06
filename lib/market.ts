@@ -83,7 +83,14 @@ async function fetchByAddress(addresses: string[]): Promise<Map<string, MarketDa
     }
     ok = true;
   } catch (err) {
-    console.error("[market] fetch failed:", err instanceof Error ? err.message : err);
+    // Log the underlying cause too: "fetch failed" alone says nothing, while
+    // ETIMEDOUT vs ENOTFOUND vs a TLS error is the whole diagnosis.
+    const cause = err instanceof Error ? (err.cause as { code?: string } | undefined)?.code : undefined;
+    console.error(
+      "[market] fetch failed:",
+      err instanceof Error ? err.message : err,
+      cause ? `(${cause})` : ""
+    );
     // Degrade honestly: callers render "—" for a null price, never a fake one.
   }
 
