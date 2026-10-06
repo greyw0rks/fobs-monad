@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:wsl": "NODE_OPTIONS=--no-network-family-autoselection next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test:pnl": "tsx tests/pnl.ts",
     "prisma": "prisma",
     "db:push": "prisma db push",
     "seed": "tsx prisma/seed-registry.ts"

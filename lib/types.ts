@@ -77,13 +77,38 @@ export type HoldingDTO = {
   valueUsd: number | null; // amount × live price; null when price is unknown
 };
 
+// A holding with a cost basis attached. Every basis field is `null` unless the
+// position can be attributed to a recorded buy — null means "unknown", never
+// "zero cost". See PortfolioDTO.pnlStatus for why the whole set is missing.
+export type PortfolioHoldingDTO = HoldingDTO & {
+  avgCostUsd: number | null; // average price paid per token still held
+  costBasisUsd: number | null; // amount × avgCostUsd
+  pnlUsd: number | null;
+  pnlPct: number | null;
+};
+
 export type PortfolioDTO = {
-  totalValueUsd: number; // sum of priced holdings (unpriced holdings excluded)
-  holdings: HoldingDTO[];
+  // Sum of the PRICED holdings. `null` when no holding has a price — a wallet
+  // whose tokens we cannot price has an unknown total, not a zero one, and
+  // rendering "$0.00" there would be a claim we cannot support.
+  totalValueUsd: number | null;
+  holdings: PortfolioHoldingDTO[];
   recentTrades: TradeDTO[];
-  // PnL needs reconstructed trade history. Until the indexer lands we say so
-  // rather than invent an average entry.
-  pnlAvailable: boolean;
+  // Cost basis is reconstructed from THE APP'S OWN recorded trades, by average
+  // cost. Three distinct facts, never collapsed into one another:
+  //   "ready"       — a basis was reconstructed
+  //   "empty"       — no recorded history we can price (unknown, not zero)
+  //   "unavailable" — the trade history could not be read at all (DB outage)
+  pnlStatus: "ready" | "empty" | "unavailable";
+  pnlMethod: "average-cost" | null;
+  basisTrades: number; // how many recorded trades the reconstruction walked
+  costBasisUsd: number | null; // cost of the positions the basis explains
+  realizedPnlUsd: number | null; // from recorded sells
+  unrealizedPnlUsd: number | null;
+  // Share of PRICED portfolio value the basis explains, 0–100. PnL covers only
+  // this much; the rest is position we cannot attribute to a recorded buy, and
+  // is excluded rather than guessed at.
+  pnlCoveragePct: number | null;
 };
 
 // Real swap quote (Kuru Flow primary, 0x fallback) — returned by
