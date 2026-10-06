@@ -79,6 +79,8 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
   const [phase, setPhase] = useState<Phase>("form");
   const [transfer, setTransfer] = useState<BridgeTransferDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [originTxHash, setOriginTxHash] = useState<string | null>(null);
+  const [recordNote, setRecordNote] = useState<string | null>(null);
   const active = useRef(true);
   useEffect(() => () => { active.current = false; }, []);
 
@@ -126,20 +128,27 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
     setError(null);
     setPhase("sending");
     try {
+      // The deposit is the step that carries the value. An approve often precedes
+      // it as a separate transaction and must not be mistaken for the funding tx.
+      let lastHash: `0x${string}` | null = null;
+      let depositHash: `0x${string}` | null = null;
       for (const step of quote.steps) {
         if (step.kind !== "transaction") {
           throw new Error(`This route needs a "${step.kind}" signature, which isn't supported in this build`);
         }
         if (chainId !== step.chainId) await switchChain({ chainId: step.chainId });
-        await sendTransaction(config, {
+        const hash = await sendTransaction(config, {
           to: step.to as Address,
           data: step.data as `0x${string}`,
           value: BigInt(step.value || "0"),
           account: address as Address,
           chainId: step.chainId
         });
+        lastHash = hash;
+        if (step.label.trim().toLowerCase().startsWith("send")) depositHash = hash;
       }
       if (!active.current) return;
+      setOriginTxHash(depositHash ?? lastHash);
       setPhase("tracking");
       setTransfer({
         depositAddress: quote.depositAddress,
@@ -187,6 +196,43 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
     return () => { live = false; if (id) clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, address, quote?.provider, quote?.requestId, quote?.depositAddress]);
+
+  // Once the bridge reports success, ask the server to record it as a
+  // CROSS_CHAIN trade. The server re-verifies both legs on-chain and reads the
+  // destination tx from Relay itself — nothing here is trusted. Safe to fire
+  // more than once: the route is idempotent on the destination tx hash.
+  const delivered = transfer?.status === "SUCCESS" || transfer?.status === "success";
+  useEffect(() => {
+    if (!delivered || phase !== "tracking") return;
+    if (!address || !originTxHash || quote?.provider !== "relay" || !quote.requestId) return;
+
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/bridge/record", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            address,
+            originChainId: quote.sourceId,
+            originTxHash,
+            requestId: quote.requestId,
+            destinationSymbol: quote.destSymbol
+          })
+        });
+        const d = await r.json();
+        if (!live || !active.current) return;
+        if (r.ok && d.recorded) setRecordNote(d.alreadyRecorded ? "Already in your feed" : "Added to your feed");
+        else if (r.ok && d.recorded === false) setRecordNote(d.reason ?? null);
+        // A failed recording is deliberately quiet: the funds arrived regardless,
+        // and only the feed entry is missing.
+      } catch {
+        /* as above — delivery is unaffected */
+      }
+    })();
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [delivered, phase, address, originTxHash, quote?.provider, quote?.requestId, quote?.sourceId, quote?.destSymbol]);
 
   const onSourceChain = chainId === source.id;
 
@@ -343,6 +389,11 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
             )}
 
             {phase === "tracking" && transfer && <TrackingView transfer={transfer} dest={dest} />}
+            {recordNote && (
+              <p className="faint text-center" style={{ fontSize: "var(--t-xs)" }}>
+                {recordNote}
+              </p>
+            )}
 
             {phase === "form" && (
               <>
