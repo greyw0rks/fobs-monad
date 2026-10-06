@@ -10,7 +10,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
   const { searchParams } = new URL(request.url);
   const viewerId = await viewerIdFromAddress(searchParams.get("address"));
 
-  const profile = await getProfile(username, viewerId);
-  if (!profile) return NextResponse.json({ error: "Trader not found" }, { status: 404 });
-  return NextResponse.json(profile);
+  const result = await getProfile(username, viewerId);
+  // "No such trader" and "the DB did not answer" are different facts: a real
+  // account must not 404 just because the database is having a bad minute.
+  if (!result.ok) {
+    return NextResponse.json({ error: "Profile is temporarily unavailable" }, { status: 503 });
+  }
+  if (!result.data) return NextResponse.json({ error: "Trader not found" }, { status: 404 });
+  return NextResponse.json(result.data);
 }

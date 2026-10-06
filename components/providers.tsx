@@ -1,6 +1,6 @@
 "use client";
 
-// App-wide client providers: wagmi (Monad testnet, injected wallets) +
+// App-wide client providers: wagmi (Monad mainnet, injected wallets) +
 // react-query (wagmi's data layer, also used for the live feed polling).
 
 import { WagmiProvider } from "wagmi";

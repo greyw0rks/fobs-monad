@@ -1,0 +1,63 @@
+# fobs (Monad) indexer — Envio HyperIndex.
+#
+# Indexes real on-chain activity so the feed / token activity / wallet activity
+# are chain-wide rather than only trades made inside the app. Monad mainnet is
+# chainId 143; Envio reads it via HyperSync (https://monad.hypersync.xyz), so no
+# RPC URL is needed here.
+#
+# Addresses mirror lib/registry.ts (the app's single source of token truth).
+# Keep them in sync when the registry changes.
+#
+# NOTE: envio 3.x deserialises this as `chains:` (the older `networks:` key fails).
+name: fobs-monad-indexer
+description: ERC20 transfers for fobs registry tokens on Monad mainnet.
+
+chains:
+  - id: 143
+    # Measured, not guessed. Monad head was 111,104,466 and the six registry
+    # tokens emit ~1.32 Transfer events per block (100-block sample: WMON 67,
+    # USDC 43, WETH 16, cbBTC 5, USDT0 1, wstETH 0). So `start_block: 0` would
+    # mean ~147M events — far past the hosted Development tier, and the deploy
+    # would be rejected or deleted mid-sync. This backfills ~54k blocks
+    # (~72k events, leaving headroom for the forward sync). Raise it, or run
+    # `pnpm dev` locally with no quota, for more history.
+    start_block: 111050000
+    contracts:
+      - name: ERC20
+        address:
+          - "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A" # WMON
+          - "0x754704Bc059F8C67012fEd69BC8A327a5aafb603" # USDC
+          - "0xe7cd86e13AC4309349F30B3435a9d337750fC82D" # USDT0
+          - "0xEE8c0E9f1BFFb4Eb878d8f15f368A02a35481242" # WETH
+          - "0x10Aeaf63194db8d453d4D85a06E5eFE1dd0b5417" # wstETH
+          - "0xd18B7EC58Cdf4876f6AFebd3Ed1730e4Ce10414b" # cbBTC
+        handler: src/EventHandlers.ts
+        events:
+          - event: "Transfer(address indexed from, address indexed to, uint256 value)"
+      # Kuru's per-market OrderBook. VERIFIED against live chain data, not taken
+      # from the docs: the published Kuru docs show `uint32 price` with maker/
+      # taker/origin indexed, and the deployed contract emits `uint256 price`
+      # with NOTHING indexed. The docs' signature hashes to a topic0 that never
+      # appears on Monad. Because no argument is indexed, these logs can only be
+      # filtered by contract address — which is exactly what this list is for.
+      #
+      # Both markets were deployed ~block 43.6M, far below `start_block`, so only
+      # their trades from `start_block` forward are indexed. That is stated in
+      # README.md rather than papered over.
+      - name: KuruOrderBook
+        address:
+          - "0x065C9d28E428A0db40191a54d33d5b7c71a9C394" # MON/USDC
+          - "0x131a2e70a5b31a517a74b8c567149bc294470da9" # MON/AUSD
+        handler: src/EventHandlers.ts
+        events:
+          - event: "Trade(uint40 orderId, address maker, bool isBuy, uint256 price, uint96 updatedSize, address taker, address origin, uint96 filledSize)"
+      # The market factory. Emits the pair + precision/fee parameters for every
+      # market it deploys, which is what makes a Trade's raw numbers interpretable
+      # at all. Again: nothing indexed, verified on-chain (12 params — the
+      # published `@devasher/kuru-sdk` ABI has a stale 11-param form).
+      - name: KuruRouter
+        address:
+          - "0xd651346d7c789536ebf06dc72aE3C8502cd695CC"
+        handler: src/EventHandlers.ts
+        events:
+          - event: "MarketRegistered(address baseAsset, address quoteAsset, address market, address vaultAddress, uint32 pricePrecision, uint96 sizePrecision, uint32 tickSize, uint96 minSize, uint96 maxSize, uint256 takerFeeBps, uint256 makerFeeBps, uint96 kuruAmmSpread)"

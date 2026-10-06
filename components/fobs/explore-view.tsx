@@ -35,10 +35,7 @@ export function ExploreView() {
       {isLoading && <div className="p-8 text-center muted">Loading markets…</div>}
       {!isLoading && tokens.length === 0 && (
         <div className="card p-8 text-center">
-          <div className="muted">No tokens yet.</div>
-          <div className="faint mt-1" style={{ fontSize: "var(--t-sm)" }}>
-            Run <span className="num">npm run seed</span> to load demo tokens.
-          </div>
+          <div className="muted">No tokens available.</div>
         </div>
       )}
 

@@ -25,7 +25,7 @@ async function fetchJSON<T>(url: string): Promise<T> {
 
 export function NotificationsView() {
   const address = useFobsAddress();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["notifications", address],
     queryFn: () => fetchJSON<{ notifications: Notif[] }>(`/api/notifications?address=${address}`),
     enabled: Boolean(address),
@@ -49,10 +49,14 @@ export function NotificationsView() {
         Activity
       </h1>
       {isLoading && <div className="p-6 text-center muted">Loading…</div>}
-      {!isLoading && notifs.length === 0 && (
+      {/* An error is NOT an empty inbox: say we couldn't load it, not "nothing here". */}
+      {isError && (
+        <div className="card p-8 text-center muted">Couldn&apos;t load your activity right now. Retrying…</div>
+      )}
+      {!isLoading && !isError && notifs.length === 0 && (
         <div className="card p-8 text-center muted">Nothing yet. Follow some traders to get going.</div>
       )}
-      {notifs.length > 0 && (
+      {!isError && notifs.length > 0 && (
         <div className="card overflow-hidden">
           {notifs.map((n) => (
             <div key={n.id} className="flex items-center gap-3 px-4 py-3 border-b hairline">

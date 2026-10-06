@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ArrowRight, ExternalLink } from "lucide-react";
-import { tryDb } from "@/lib/db";
+import { ArrowRight, ExternalLink, RefreshCw } from "lucide-react";
+import { dbQuery, type DbResult } from "@/lib/db";
 import { tradeInclude, toTradeDTO } from "@/lib/feed";
 import { Avatar, Num } from "@/components/fobs/ui";
 import { money, compactNumber, price, ago, txUrl, shortHash } from "@/lib/format";
@@ -11,15 +11,20 @@ import type { TradeDTO } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-async function getTrade(id: string): Promise<TradeDTO | null> {
-  const row = await tryDb((db) => db.trade.findUnique({ where: { id }, include: tradeInclude }));
-  return row ? toTradeDTO(row) : null;
+// `ok: false` (DB didn't answer) is kept apart from `data: null` (no such
+// trade). A publicly shared link must never 404 because of a cold start.
+async function getTrade(id: string): Promise<DbResult<TradeDTO | null>> {
+  const row = await dbQuery((db) => db.trade.findUnique({ where: { id }, include: tradeInclude }));
+  return row.ok ? { ok: true, data: row.data ? toTradeDTO(row.data) : null } : row;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const trade = await getTrade(id);
-  if (!trade) return { title: "Trade · fobs" };
+  const result = await getTrade(id);
+  // Don't emit an OG card for a trade we could not load — an unfurl for a trade
+  // we haven't read would be asserting something we don't know.
+  if (!result.ok || !result.data) return { title: "Trade · fobs" };
+  const trade = result.data;
   const verb = trade.side === "BUY" ? "Bought" : "Sold";
   const title = `${verb} ${compactNumber(trade.amountToken)} ${trade.token.symbol} on Monad · fobs`;
   const description = `@${trade.trader.username} ${verb.toLowerCase()} ${money(trade.amountUsd)} of ${trade.token.symbol} on Monad via fobs.`;
@@ -28,9 +33,11 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function SharePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const trade = await getTrade(id);
-  if (!trade) notFound();
+  const result = await getTrade(id);
+  if (!result.ok) return <Unavailable id={id} />;
+  if (!result.data) notFound();
 
+  const trade = result.data;
   const verb = trade.side === "BUY" ? "Bought" : "Sold";
 
   return (
@@ -123,7 +130,7 @@ export default async function SharePage({ params }: { params: Promise<{ id: stri
           </div>
 
           <p className="faint text-center mt-4" style={{ fontSize: "var(--t-xs)" }}>
-            Simulated trade on a demo build · the bridge is infrastructure, the trade is the product.
+            A real, user-signed swap on Monad. Fobs never holds your keys or your funds.
           </p>
         </div>
       </main>
@@ -136,6 +143,46 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
     <div className="flex items-center justify-between gap-3">
       <span className="muted">{label}</span>
       <span className="text-right">{children}</span>
+    </div>
+  );
+}
+
+// Shown when the trade could not be READ — deliberately not a 404, and it makes
+// no claim about the trade (not "expired", not "deleted"). Renders with a 200
+// because App Router has no way to set a status on a rendered page; the honesty
+// here is in the message, and the state is never cached (force-dynamic).
+function Unavailable({ id }: { id: string }) {
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)", color: "var(--ink)" }}>
+      <header className="flex items-center justify-between px-5 h-16 border-b hairline">
+        <Link href={"/" as Route} className="flex items-center gap-2">
+          <span className="num" style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.03em" }}>
+            fobs
+          </span>
+          <span className="chip">Monad</span>
+        </Link>
+        <Link href={"/feed" as Route} className="btn btn-sm">
+          Open app
+        </Link>
+      </header>
+
+      <main className="flex-1 flex items-center justify-center px-5 py-12">
+        <div className="w-full text-center" style={{ maxWidth: 440 }}>
+          <h1 style={{ fontSize: "var(--t-xl)", fontWeight: 700 }}>Couldn&apos;t load this trade</h1>
+          <p className="muted mt-2">
+            We couldn&apos;t reach our data right now, so we can&apos;t show you what happened. This trade link is
+            unchanged — try again in a moment.
+          </p>
+          <div className="flex gap-2 mt-5 justify-center">
+            <Link href={`/share/${id}` as Route} className="btn btn-primary" style={{ height: 44 }}>
+              <RefreshCw size={15} /> Try again
+            </Link>
+            <Link href={"/feed" as Route} className="btn" style={{ height: 44 }}>
+              Explore fobs
+            </Link>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

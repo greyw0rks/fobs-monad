@@ -6,3 +6,5 @@ node_modules
 next-env.d.ts.timestamp
 /out
 .DS_Store
+.vercel
+.env*

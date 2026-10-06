@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getToken } from "@/lib/tokens";
 import { getTokenActivity } from "@/lib/feed";
 import { getSignal } from "@/lib/signal";
+import { getTokenSmartMoney } from "@/lib/labels";
+import { getChainActivity } from "@/lib/indexer";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +13,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ sym
   const token = await getToken(symbol);
   if (!token) return NextResponse.json({ error: "Token not found" }, { status: 404 });
 
-  const [activity, signal] = await Promise.all([
+  const [activity, signal, smartMoney, chainActivity] = await Promise.all([
     getTokenActivity(token.symbol, 30),
-    getSignal(token.symbol)
+    getSignal(token.symbol),
+    // null when Nansen is unconfigured / has no Monad coverage — rendered as nothing.
+    getTokenSmartMoney(token.address).catch(() => null),
+    // Raw on-chain transfers (Envio), a different thing from `activity` above.
+    // null when the indexer is unconfigured or did not answer — rendered as nothing.
+    getChainActivity(token).catch(() => null)
   ]);
 
-  return NextResponse.json({ token, activity, signal });
+  return NextResponse.json({ token, activity, signal, smartMoney, chainActivity });
 }
