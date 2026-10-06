@@ -1,0 +1,29 @@
+# fobs (Monad) indexer — Envio HyperIndex.
+#
+# Indexes real on-chain activity so the feed / token activity / wallet activity
+# are chain-wide rather than only trades made inside the app. Monad mainnet is
+# chainId 143; Envio reads it via HyperSync (https://monad.hypersync.xyz), so no
+# RPC URL is needed here.
+#
+# Addresses mirror lib/registry.ts (the app's single source of token truth).
+# Keep them in sync when the registry changes.
+#
+# NOTE: envio 3.x deserialises this as `chains:` (the older `networks:` key fails).
+name: fobs-monad-indexer
+description: ERC20 transfers for fobs registry tokens on Monad mainnet.
+
+chains:
+  - id: 143
+    start_block: 0
+    contracts:
+      - name: ERC20
+        address:
+          - "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A" # WMON
+          - "0x754704Bc059F8C67012fEd69BC8A327a5aafb603" # USDC
+          - "0xe7cd86e13AC4309349F30B3435a9d337750fC82D" # USDT0
+          - "0xEE8c0E9f1BFFb4Eb878d8f15f368A02a35481242" # WETH
+          - "0x10Aeaf63194db8d453d4D85a06E5eFE1dd0b5417" # wstETH
+          - "0xd18B7EC58Cdf4876f6AFebd3Ed1730e4Ce10414b" # cbBTC
+        handler: src/EventHandlers.ts
+        events:
+          - event: "Transfer(address indexed from, address indexed to, uint256 value)"

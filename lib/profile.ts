@@ -6,6 +6,7 @@ import { tryDb } from "./db";
 import { tradeInclude, toTradeDTO } from "./feed";
 import { getMarket, type MarketData } from "./market";
 import { getHoldings } from "./portfolio";
+import { getWalletLabels } from "./labels";
 import type { TradeDTO, TraderDTO, HoldingDTO } from "./types";
 
 export type ProfileDTO = {
@@ -16,6 +17,8 @@ export type ProfileDTO = {
   holdings: HoldingDTO[];
   recentTrades: TradeDTO[];
   isFollowedByViewer: boolean;
+  /** External labels (Nansen). Empty when unconfigured / unavailable — never faked. */
+  labels: string[];
 };
 
 export async function getProfile(username: string, viewerId: string | null): Promise<ProfileDTO | null> {
@@ -44,11 +47,12 @@ export async function getProfile(username: string, viewerId: string | null): Pro
 
   if (!data) return null;
 
-  const [holdings, market] = await Promise.all([
+  const [holdings, market, labels] = await Promise.all([
     getHoldings(data.user.address as `0x${string}`).catch(() => [] as HoldingDTO[]),
     data.recentTrades.length
       ? getMarket([...new Set(data.recentTrades.map((r) => r.token.symbol))])
-      : Promise.resolve(new Map<string, MarketData>())
+      : Promise.resolve(new Map<string, MarketData>()),
+    getWalletLabels(data.user.address).catch(() => null)
   ]);
 
   return {
@@ -66,6 +70,7 @@ export async function getProfile(username: string, viewerId: string | null): Pro
     following: data.following,
     holdings,
     recentTrades: data.recentTrades.map((r) => toTradeDTO(r, market.get(r.token.symbol.toUpperCase()))),
-    isFollowedByViewer: Boolean(data.followEdge)
+    isFollowedByViewer: Boolean(data.followEdge),
+    labels: labels?.labels ?? []
   };
 }

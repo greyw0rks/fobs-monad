@@ -3,12 +3,13 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { X, ArrowDown, Check, Loader2, Share2, Copy, ExternalLink, AlertTriangle } from "lucide-react";
+import { X, ArrowDown, Check, Loader2, Share2, Copy, ExternalLink, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useAccount, useBalance, useConfig, useSwitchChain } from "wagmi";
 import { sendTransaction, writeContract, waitForTransactionReceipt, readContract } from "wagmi/actions";
 import { erc20Abi, type Address } from "viem";
 import { useFobsAddress, useOnMonad } from "./connect-wallet-button";
+import { useBridgeDrawer } from "./bridge-drawer";
 import { Num } from "./ui";
 import { money, qty, compactNumber, txUrl } from "@/lib/format";
 import { bySymbol, QUOTE_SYMBOL } from "@/lib/registry";
@@ -50,6 +51,7 @@ type Phase = "form" | "executing" | "done";
 function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; onClose: () => void }) {
   const address = useFobsAddress();
   const onMonad = useOnMonad();
+  const { openBridge } = useBridgeDrawer();
   const { chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const config = useConfig();
@@ -295,6 +297,18 @@ function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; on
                 </div>
               </div>
 
+              {/* Cross-chain funding — the "fund from another chain" step. */}
+              <button
+                className="btn btn-sm self-start"
+                style={{ marginTop: -8 }}
+                onClick={() => openBridge(isBuy ? "USDC" : "MON")}
+              >
+                <ArrowRightLeft size={13} />
+                {available != null && amountNum > 0 && available < amountNum
+                  ? `Not enough ${isBuy ? QUOTE_TOKEN.symbol : symbol} — fund from another chain`
+                  : "Fund from another chain"}
+              </button>
+
               {/* Route */}
               <div>
                 <div className="eyebrow mb-2">Route</div>
@@ -356,7 +370,7 @@ function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; on
                   <Num className="muted">{quote?.networkFeeUsd != null ? money(quote.networkFeeUsd) : "—"}</Num>
                 </Line>
                 <Line label="Routed by">
-                  <Num className="muted">0x</Num>
+                  <Num className="muted">{quote ? (quote.venue === "kuru" ? "Kuru" : "0x") : "—"}</Num>
                 </Line>
               </div>
 
@@ -470,7 +484,7 @@ function ExecutingView({ status, quote, symbol }: { status: SwapStatus; quote: S
         })}
       </div>
       <p className="faint" style={{ fontSize: "var(--t-xs)" }}>
-        Swapping {symbol} through 0x on Monad…
+        Swapping {symbol} through {quote?.venue === "kuru" ? "Kuru" : "0x"} on Monad…
       </p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

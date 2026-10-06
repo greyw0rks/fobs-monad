@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { formatUnits, parseUnits } from "viem";
 import { bySymbol, swapAddress, QUOTE_SYMBOL, type TokenMeta } from "@/lib/registry";
-import { getSwapQuote, ZeroExError } from "@/lib/zerox";
+import { getBestQuote } from "@/lib/swap";
+import { KuruError } from "@/lib/kuru";
+import { ZeroExError } from "@/lib/zerox";
 import { getMarket } from "@/lib/market";
 import type { SwapQuoteDTO } from "@/lib/types";
 
@@ -61,28 +63,29 @@ export async function POST(request: Request) {
   }
   if (sellAmount <= BigInt(0)) return NextResponse.json({ error: "Amount is too small" }, { status: 400 });
 
-  let ox;
+  let routed;
   try {
-    ox = await getSwapQuote({
-      sellToken: swapAddress(sell),
-      buyToken: swapAddress(buy),
+    routed = await getBestQuote({
+      sell,
+      buy,
       sellAmount: sellAmount.toString(),
       taker: taker as `0x${string}`,
       slippageBps
     });
   } catch (err) {
-    const status = err instanceof ZeroExError ? 422 : 502;
+    const status = err instanceof ZeroExError || err instanceof KuruError ? 422 : 502;
     return NextResponse.json({ error: err instanceof Error ? err.message : "Quote failed" }, { status });
   }
 
-  if (!ox.transaction) {
+  const { quote: venueQuote, venue } = routed;
+  if (!venueQuote.transaction) {
     return NextResponse.json({ error: "No route available for this trade right now" }, { status: 422 });
   }
 
   const monPrice = market.get("MON")?.priceUsd ?? null;
   const networkFeeUsd =
-    ox.totalNetworkFee != null && monPrice != null
-      ? Number(formatUnits(BigInt(ox.totalNetworkFee), 18)) * monPrice
+    venueQuote.totalNetworkFee != null && monPrice != null
+      ? Number(formatUnits(BigInt(venueQuote.totalNetworkFee), 18)) * monPrice
       : null;
 
   const dto: SwapQuoteDTO = {
@@ -90,23 +93,24 @@ export async function POST(request: Request) {
     buySymbol: buy.symbol,
     subjectSymbol: subject.symbol,
     side,
-    sellAmount: ox.sellAmount,
-    buyAmount: ox.buyAmount,
-    minBuyAmount: ox.minBuyAmount,
-    sellAmountToken: Number(formatUnits(BigInt(ox.sellAmount), sell.decimals)),
-    buyAmountToken: Number(formatUnits(BigInt(ox.buyAmount), buy.decimals)),
-    minBuyAmountToken: Number(formatUnits(BigInt(ox.minBuyAmount), buy.decimals)),
+    venue,
+    sellAmount: venueQuote.sellAmount,
+    buyAmount: venueQuote.buyAmount,
+    minBuyAmount: venueQuote.minBuyAmount,
+    sellAmountToken: Number(formatUnits(BigInt(venueQuote.sellAmount), sell.decimals)),
+    buyAmountToken: Number(formatUnits(BigInt(venueQuote.buyAmount), buy.decimals)),
+    minBuyAmountToken: Number(formatUnits(BigInt(venueQuote.minBuyAmount), buy.decimals)),
     subjectPriceUsd: market.get(subject.symbol)?.priceUsd ?? null,
     networkFeeUsd,
     slippageBps,
     sellTokenAddress: swapAddress(sell),
     sellIsNative: Boolean(sell.isNative),
-    to: ox.transaction.to,
-    data: ox.transaction.data,
-    value: ox.transaction.value,
-    allowanceTarget: sell.isNative ? null : ox.allowanceTarget,
+    to: venueQuote.transaction.to,
+    data: venueQuote.transaction.data,
+    value: venueQuote.transaction.value,
+    allowanceTarget: sell.isNative ? null : venueQuote.allowanceTarget,
     // Approve the amount being sold — sufficient for this trade, minimal exposure.
-    allowanceNeeded: sell.isNative ? null : ox.sellAmount
+    allowanceNeeded: sell.isNative ? null : venueQuote.sellAmount
   };
 
   return NextResponse.json({ quote: dto });

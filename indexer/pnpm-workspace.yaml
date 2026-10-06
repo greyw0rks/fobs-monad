@@ -1,0 +1,9 @@
+allowBuilds:
+  esbuild: true
+# The indexer is a standalone package (it is NOT part of the app workspace, so
+# its deps never touch the Next app's install). pnpm 11 reads the build-script
+# allowlist and overrides from here, not from package.json.
+onlyBuiltDependencies:
+  - esbuild
+strictDepBuilds: false
+verifyDepsBeforeRun: false

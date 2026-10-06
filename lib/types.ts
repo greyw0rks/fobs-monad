@@ -64,14 +64,16 @@ export type PortfolioDTO = {
   pnlAvailable: boolean;
 };
 
-// Real swap quote (0x Swap API v2) — returned by /api/trade/quote. Includes the
-// unsigned transaction the client signs in the user's wallet. The server never
-// signs; amounts shown here are indicative until the tx confirms on-chain.
+// Real swap quote (Kuru Flow primary, 0x fallback) — returned by
+// /api/trade/quote. Includes the unsigned transaction the client signs in the
+// user's wallet. The server never signs; amounts shown here are indicative
+// until the tx confirms on-chain.
 export type SwapQuoteDTO = {
   sellSymbol: string;
   buySymbol: string;
   subjectSymbol: string; // the token the trade is "about" (what the UI centres on)
   side: "BUY" | "SELL";
+  venue: "kuru" | "0x"; // which router filled this quote
   sellAmount: string; // base units
   buyAmount: string; // base units
   minBuyAmount: string; // base units, after slippage
@@ -89,6 +91,53 @@ export type SwapQuoteDTO = {
   value: string; // wei
   allowanceTarget: string | null; // ERC20 spender to approve (null if native sell)
   allowanceNeeded: string | null; // base units of allowance required (null if ok)
+};
+
+// One wallet action in a bridge quote. Relay returns origin-chain transactions
+// (approve + deposit); Aurora yields a single ERC20 transfer to a deposit
+// address. Both are normalised to this shape so the drawer just signs them.
+export type BridgeStepDTO = {
+  label: string;
+  kind: string; // "transaction" is signable; anything else is surfaced, not skipped
+  to: string;
+  data: string;
+  value: string;
+  chainId: number;
+};
+
+// Cross-chain funding quote — returned by /api/bridge/quote. The user signs the
+// steps in their OWN wallet on the source chain; no server-side signing, no
+// custody. `provider` records which bridge answered, so provenance is never lost.
+export type BridgeQuoteDTO = {
+  provider: "relay" | "aurora";
+  requestId: string | null; // Relay's status key
+  sourceId: number;
+  sourceName: string;
+  sourceSymbol: string;
+  destSymbol: string;
+  amountIn: string; // base units of the source asset
+  amountOut: string; // base units received on Monad
+  amountInToken: number; // human-readable
+  amountOutToken: number;
+  amountInUsd: number | null;
+  amountOutUsd: number | null;
+  steps: BridgeStepDTO[];
+  depositAddress: string | null; // Aurora's deposit target
+  depositMemo: string | null;
+  deadline: string | null; // ISO — quote/deposit expiry
+  timeEstimateSec: number | null;
+};
+
+// A cross-chain transfer, read back from Aurora (matched by depositAddress).
+// `status` is Aurora's own value, passed through verbatim — never re-mapped.
+export type BridgeTransferDTO = {
+  depositAddress: string | null;
+  status: string; // PENDING_DEPOSIT | PROCESSING | SUCCESS | REFUNDED | FAILED | …
+  destinationTxHashes: string[];
+  amountInFormatted: string | null;
+  amountOutFormatted: string | null;
+  createdAt: string | null;
+  refundReason: string | null; // populated only when Aurora refunded
 };
 
 // Real on-chain execution stages, driven by wallet + receipt state (no timers).

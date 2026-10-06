@@ -1,0 +1,36 @@
+# fobs (Monad) indexer schema — Envio HyperIndex.
+#
+# Three read models the app queries over GraphQL:
+#   Transfer          — one row per ERC20 Transfer for a registry token
+#   TokenStats        — per-token aggregate (transfer count, volume)
+#   WalletTokenStats  — per (wallet, token) net position from transfers
+#
+# `Transfer.id` = "{chainId}_{block}_{logIndex}", so rows are unique and
+# reconstructable without needing the tx hash.
+
+type Transfer {
+  id: ID!
+  token: String! # lowercased ERC20 contract address
+  from: String! # lowercased
+  to: String! # lowercased
+  value: BigInt!
+  blockNumber: Int!
+  timestamp: Int!
+}
+
+type TokenStats {
+  id: ID! # lowercased token address
+  transfers: Int!
+  volume: BigInt!
+  lastUpdated: Int!
+}
+
+type WalletTokenStats {
+  id: ID! # "{wallet}_{token}"
+  wallet: String!
+  token: String!
+  sent: BigInt!
+  received: BigInt!
+  transfers: Int!
+  lastUpdated: Int!
+}

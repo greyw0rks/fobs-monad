@@ -5,10 +5,15 @@ import { useTradeDrawer } from "./trade-drawer";
 import { TradeRow } from "./trade-row";
 import { PriceChart } from "./price-chart";
 import { Avatar, Num, SignalBar } from "./ui";
-import { price, pct, compactMoney, compactNumber } from "@/lib/format";
+import { price, pct, compactMoney, compactNumber, money } from "@/lib/format";
 import type { TokenDTO, TradeDTO, SignalDTO } from "@/lib/types";
 
-type TokenResp = { token: TokenDTO; activity: TradeDTO[]; signal: SignalDTO | null };
+type TokenResp = {
+  token: TokenDTO;
+  activity: TradeDTO[];
+  signal: SignalDTO | null;
+  smartMoney: { holders: number; netflowUsd: number } | null;
+};
 
 async function fetchJSON<T>(url: string): Promise<T> {
   const r = await fetch(url);
@@ -27,7 +32,7 @@ export function TokenView({ symbol }: { symbol: string }) {
   if (isLoading) return <div className="p-8 text-center muted">Loading {symbol}…</div>;
   if (isError || !data) return <div className="p-8 text-center muted">Token {symbol} not found.</div>;
 
-  const { token, activity, signal } = data;
+  const { token, activity, signal, smartMoney } = data;
   const up = token.change24h >= 0;
 
   return (
@@ -105,6 +110,26 @@ export function TokenView({ symbol }: { symbol: string }) {
               </div>
               <p className="faint mt-3" style={{ fontSize: "var(--t-xs)" }}>
                 A momentum blend from the activity graph. Not financial advice or a price prediction.
+              </p>
+            </div>
+          )}
+
+          {smartMoney && (smartMoney.holders > 0 || smartMoney.netflowUsd !== 0) && (
+            <div className="card p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="eyebrow">Smart money</span>
+                <span className="chip">Nansen</span>
+              </div>
+              <div className="flex flex-col gap-1.5" style={{ fontSize: "var(--t-sm)" }}>
+                <SignalLine label="Wallets holding" value={compactNumber(smartMoney.holders)} />
+                <SignalLine
+                  label="Net flow"
+                  value={money(smartMoney.netflowUsd)}
+                  up={smartMoney.netflowUsd >= 0}
+                />
+              </div>
+              <p className="faint mt-3" style={{ fontSize: "var(--t-xs)" }}>
+                Labeled smart-money activity from Nansen.
               </p>
             </div>
           )}
