@@ -22,14 +22,23 @@ client claims.
   `0xb3e6…13cb`) and SELL MON→USDC (`sellIsNative:true`,
   `value:"500000000000000000"` = exactly 0.5 MON, `allowanceTarget:null`). 0x
   fallback retains the existing path.
-- 🟡 **Stage 2 — Envio: scaffold built & typecheck-verified.** `indexer/` has
-  `config.yaml` (chains: 143 + registry tokens), `schema.graphql`, and
-  `src/EventHandlers.ts`; `envio codegen` + `tsc --noEmit` are green against
-  `envio 3.12.1` (so the v2-era `networks:` key was wrong — v3 wants `chains:`).
-  **User chose local (`envio dev`).** Blocked: `envio dev` starts its own
-  Postgres+Hasura in **Docker**, and neither Docker nor Podman is installed here
-  (`docker`/`podman` absent, daemon inactive). Installing needs interactive
-  sudo — see "Unblocking Envio local" below.
+- 🟢 **Stage 2 — Envio: deployed, indexed, and wired into the app.** `indexer/`
+  (`config.yaml` chains: 143 + registry tokens, `schema.graphql`,
+  `src/EventHandlers.ts`) runs on **Envio Cloud** — repo `fobs-monad`, branch
+  `envio`, root dir `indexer`, Development plan — serving GraphQL at
+  `indexer.dev.hyperindex.xyz/a521f92/v1/graphql`. Verified live: 39,585 USDC
+  transfers and 43k WMON transfers with real block numbers, aggregated into
+  `TokenStats` / `WalletTokenStats`. App side: `lib/indexer.ts` (server-only,
+  30s TTL, honest-null) feeds a `chainActivity` read model on
+  `/api/tokens/[symbol]`, rendered as its own **Chain activity** card — never
+  merged into the trade feed, because a transfer is not a trade.
+  **Two things to know.** (1) `start_block` is **111,050,000**, not 0: the six
+  tokens emit ~1.32 `Transfer` events/block, so full history is ~147M events.
+  (2) The Development tier's **100k-event soft limit is cumulative**, so this
+  deployment will be grace-period'd then deleted (~10 days) no matter how
+  `start_block` is tuned — it is a working proof, not permanent hosting. A
+  permanent indexer needs local `envio dev` (Docker) or a paid plan; both are
+  a one-line `ENVIO_INDEXER_URL` swap. See `indexer/README.md`.
 - 🟢 **Stage 3 — cross-chain funding: BUILT, verified end-to-end live.** Two
   providers behind one DTO. **Relay is primary** — it is the one that actually
   routes to Monad. **Aurora Intents is the fallback**: its appKey authenticates
@@ -60,7 +69,7 @@ client claims.
 | Kuru | **Primary swap venue**; 0x retained as automatic fallback |
 | Cross-chain | **Relay primary + Aurora Intents fallback** (Aurora can't route Monad — see below) |
 | Nansen | **Adapter now, key later** — honest-empty until `NANSEN_API_KEY` is set |
-| Envio | **Local first** (`envio dev`, user's choice 2026-10-05) — Cloud later; app reads its GraphQL endpoint |
+| Envio | **Envio Cloud** (branch `envio`, root dir `indexer`) — deployed and wired; dev tier, so the deployment expires. Local `envio dev` (Docker) remains the no-quota option |
 
 ## Research findings (evidence)
 

@@ -40,6 +40,28 @@ export type TradeDTO = {
   token: Pick<TokenDTO, "symbol" | "name" | "logo" | "priceUsd" | "change24h">;
 };
 
+// Chain-wide ERC20 activity from the Envio indexer. Deliberately NOT TradeDTO:
+// these are raw on-chain transfers, and a transfer is not a trade (it can be a
+// swap, a CEX deposit, or a wallet's own housekeeping). Kept separate so the UI
+// never presents a transfer as somebody's trade.
+export type ChainTransferDTO = {
+  id: string; // "{chainId}_{block}_{logIndex}"
+  from: string;
+  to: string;
+  value: string; // base units, decimal string (exact)
+  amountToken: number; // same amount, human-readable via the token's decimals
+  blockNumber: number;
+  timestamp: number; // unix seconds
+};
+
+export type ChainActivityDTO = {
+  transfers: ChainTransferDTO[]; // newest first
+  indexedTransfers: number; // total for this token since the indexer's start block
+  indexedVolumeToken: number; // total volume in that same window, in tokens
+  lastIndexedAt: number; // unix seconds of the newest indexed block
+  source: "envio";
+};
+
 export type SignalDTO = {
   score: number; // 0–100, Fobs' own metric
   volumeUsd: number;

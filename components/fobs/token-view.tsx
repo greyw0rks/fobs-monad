@@ -5,14 +5,17 @@ import { useTradeDrawer } from "./trade-drawer";
 import { TradeRow } from "./trade-row";
 import { PriceChart } from "./price-chart";
 import { Avatar, Num, SignalBar } from "./ui";
-import { price, pct, compactMoney, compactNumber, money } from "@/lib/format";
-import type { TokenDTO, TradeDTO, SignalDTO } from "@/lib/types";
+import { price, pct, compactMoney, compactNumber, money, ago, shortAddress, addressUrl } from "@/lib/format";
+import type { TokenDTO, TradeDTO, SignalDTO, ChainActivityDTO } from "@/lib/types";
 
 type TokenResp = {
   token: TokenDTO;
   activity: TradeDTO[];
   signal: SignalDTO | null;
   smartMoney: { holders: number; netflowUsd: number } | null;
+  // Raw on-chain ERC20 transfers (Envio) — null when the indexer is
+  // unconfigured or did not answer. Not the same thing as `activity`.
+  chainActivity: ChainActivityDTO | null;
 };
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -32,7 +35,7 @@ export function TokenView({ symbol }: { symbol: string }) {
   if (isLoading) return <div className="p-8 text-center muted">Loading {symbol}…</div>;
   if (isError || !data) return <div className="p-8 text-center muted">Token {symbol} not found.</div>;
 
-  const { token, activity, signal, smartMoney } = data;
+  const { token, activity, signal, smartMoney, chainActivity } = data;
   const up = token.change24h >= 0;
 
   return (
@@ -145,6 +148,58 @@ export function TokenView({ symbol }: { symbol: string }) {
           activity.map((t) => <TradeRow key={t.id} trade={t} onTrade={openTrade} />)
         )}
       </div>
+
+      {/* Chain-wide activity — raw ERC20 transfers from the Envio indexer. Kept
+          distinct from the trade feed above: a transfer is not a trade. */}
+      {chainActivity && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b hairline flex items-center justify-between gap-3 flex-wrap">
+            <span className="eyebrow">Chain activity</span>
+            <span className="flex items-center gap-2">
+              <span className="chip">Envio</span>
+              <span className="faint" style={{ fontSize: "var(--t-xs)" }}>
+                <Num>{compactNumber(chainActivity.indexedTransfers)}</Num> transfers ·{" "}
+                <Num>{compactNumber(chainActivity.indexedVolumeToken)}</Num> {token.symbol} indexed
+              </span>
+            </span>
+          </div>
+
+          {chainActivity.transfers.length === 0 ? (
+            <div className="p-6 text-center muted">No {token.symbol} transfers indexed yet.</div>
+          ) : (
+            chainActivity.transfers.map((t) => (
+              <div
+                key={t.id}
+                className="px-4 py-2.5 flex items-center justify-between gap-3 border-b hairline last:border-b-0 row-hover"
+                style={{ fontSize: "var(--t-sm)" }}
+              >
+                <span className="num min-w-0 truncate">
+                  <a href={addressUrl(t.from)} target="_blank" rel="noreferrer" className="muted hover:underline">
+                    {shortAddress(t.from)}
+                  </a>
+                  <span className="faint"> → </span>
+                  <a href={addressUrl(t.to)} target="_blank" rel="noreferrer" className="hover:underline">
+                    {shortAddress(t.to)}
+                  </a>
+                </span>
+                <span className="flex items-center gap-3 shrink-0">
+                  <Num>
+                    {compactNumber(t.amountToken)} {token.symbol}
+                  </Num>
+                  <span className="faint" style={{ fontSize: "var(--t-xs)" }}>
+                    {ago(new Date(t.timestamp * 1000))}
+                  </span>
+                </span>
+              </div>
+            ))
+          )}
+
+          <p className="px-4 py-3 faint border-t hairline" style={{ fontSize: "var(--t-xs)" }}>
+            Raw ERC20 transfers indexed on-chain by Envio — a transfer is not a trade. Newest
+            indexed block {ago(new Date(chainActivity.lastIndexedAt * 1000))}.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
