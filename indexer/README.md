@@ -32,8 +32,12 @@ local Postgres container; without Docker it exits with
 `Failed connecting to Docker or Podman`.
 
 Monad is read via HyperSync (`https://monad.hypersync.xyz`), so no RPC is
-configured. `start_block: 0` indexes the full history for the six tokens — narrow
-it if you want a faster first sync.
+configured. `start_block` is **not 0**: Monad mainnet is past block 111,000,000
+and the six registry tokens emit ~1.32 `Transfer` events per block (measured over
+a 100-block sample), so a full-history backfill is roughly 147M events — far past
+the hosted Development tier. It currently starts at block 111,050,000
+(~54k blocks / ~72k events). Raise it, or run `pnpm dev` locally where there is no
+quota, for more history.
 
 ## Deploy to Envio Cloud (free dev tier)
 
@@ -50,8 +54,11 @@ envio-cloud deployment status
 
 Then set the app's `ENVIO_INDEXER_URL` to the deployed GraphQL endpoint.
 
-> **Blocked on:** an Envio account + a GitHub repo for this project. The repo
-> currently has no git remote.
+The indexer is already added on Envio Cloud: repo `fobs-monad`, active branch
+`envio`, **root directory `indexer`** (not `./` — the repo root holds the Next
+app's `package.json` and no `config.yaml`), config file `config.yaml`,
+Development plan. Envio deploys on **push to `envio`**, so a deployment only
+starts once a commit lands on that branch after the indexer was added.
 
 ## Still to add
 

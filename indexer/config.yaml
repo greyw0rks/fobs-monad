@@ -14,7 +14,14 @@ description: ERC20 transfers for fobs registry tokens on Monad mainnet.
 
 chains:
   - id: 143
-    start_block: 0
+    # Measured, not guessed. Monad head was 111,104,466 and the six registry
+    # tokens emit ~1.32 Transfer events per block (100-block sample: WMON 67,
+    # USDC 43, WETH 16, cbBTC 5, USDT0 1, wstETH 0). So `start_block: 0` would
+    # mean ~147M events — far past the hosted Development tier, and the deploy
+    # would be rejected or deleted mid-sync. This backfills ~54k blocks
+    # (~72k events, leaving headroom for the forward sync). Raise it, or run
+    # `pnpm dev` locally with no quota, for more history.
+    start_block: 111050000
     contracts:
       - name: ERC20
         address:
