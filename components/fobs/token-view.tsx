@@ -10,7 +10,8 @@ import type { TokenDTO, TradeDTO, SignalDTO, ChainActivityDTO } from "@/lib/type
 
 type TokenResp = {
   token: TokenDTO;
-  activity: TradeDTO[];
+  // null = the DB did not answer (NOT "no trades"). [] = genuinely no trades.
+  activity: TradeDTO[] | null;
   signal: SignalDTO | null;
   smartMoney: { holders: number; netflowUsd: number } | null;
   // Raw on-chain ERC20 transfers (Envio) — null when the indexer is
@@ -142,7 +143,9 @@ export function TokenView({ symbol }: { symbol: string }) {
       {/* Activity (full width) */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b hairline eyebrow">Activity</div>
-        {activity.length === 0 ? (
+        {activity === null ? (
+          <div className="p-6 text-center muted">Trade history is temporarily unavailable.</div>
+        ) : activity.length === 0 ? (
           <div className="p-6 text-center muted">No trades on {token.symbol} yet.</div>
         ) : (
           activity.map((t) => <TradeRow key={t.id} trade={t} onTrade={openTrade} />)

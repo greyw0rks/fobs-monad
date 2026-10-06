@@ -2,7 +2,7 @@
 // Holdings are read live from the trader's wallet; PnL needs reconstructed
 // history and is deferred to the indexer milestone.
 
-import { tryDb } from "./db";
+import { dbQuery, type DbResult } from "./db";
 import { tradeInclude, toTradeDTO } from "./feed";
 import { getMarket, type MarketData } from "./market";
 import { getHoldings } from "./portfolio";
@@ -21,8 +21,18 @@ export type ProfileDTO = {
   labels: string[];
 };
 
-export async function getProfile(username: string, viewerId: string | null): Promise<ProfileDTO | null> {
-  const data = await tryDb(async (db) => {
+/**
+ * A trader's public profile.
+ *
+ * Returns a `DbResult` because "no such user" and "the DB did not answer" must
+ * not collapse: the first is a real 404, the second is a 503. Rendering an
+ * outage as "Trader not found" tells the viewer a real account doesn't exist.
+ */
+export async function getProfile(
+  username: string,
+  viewerId: string | null
+): Promise<DbResult<ProfileDTO | null>> {
+  const result = await dbQuery(async (db) => {
     const user = await db.user.findUnique({ where: { username: username.toLowerCase() } });
     if (!user) return null;
 
@@ -45,7 +55,10 @@ export async function getProfile(username: string, viewerId: string | null): Pro
     return { user, followers, following, recentTrades, followEdge };
   });
 
-  if (!data) return null;
+  if (!result.ok) return result; // the DB did not answer — not an empty profile
+
+  const data = result.data;
+  if (!data) return { ok: true, data: null }; // genuinely no such user
 
   const [holdings, market, labels] = await Promise.all([
     getHoldings(data.user.address as `0x${string}`).catch(() => [] as HoldingDTO[]),
@@ -56,21 +69,24 @@ export async function getProfile(username: string, viewerId: string | null): Pro
   ]);
 
   return {
-    trader: {
-      id: data.user.id,
-      username: data.user.username,
-      displayName: data.user.displayName,
-      avatar: data.user.avatar,
-      isNotable: data.user.isNotable,
-      bio: data.user.bio,
-      createdAt: data.user.createdAt.toISOString(),
-      address: data.user.address
-    },
-    followers: data.followers,
-    following: data.following,
-    holdings,
-    recentTrades: data.recentTrades.map((r) => toTradeDTO(r, market.get(r.token.symbol.toUpperCase()))),
-    isFollowedByViewer: Boolean(data.followEdge),
-    labels: labels?.labels ?? []
+    ok: true,
+    data: {
+      trader: {
+        id: data.user.id,
+        username: data.user.username,
+        displayName: data.user.displayName,
+        avatar: data.user.avatar,
+        isNotable: data.user.isNotable,
+        bio: data.user.bio,
+        createdAt: data.user.createdAt.toISOString(),
+        address: data.user.address
+      },
+      followers: data.followers,
+      following: data.following,
+      holdings,
+      recentTrades: data.recentTrades.map((r) => toTradeDTO(r, market.get(r.token.symbol.toUpperCase()))),
+      isFollowedByViewer: Boolean(data.followEdge),
+      labels: labels?.labels ?? []
+    }
   };
 }

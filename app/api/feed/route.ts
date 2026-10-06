@@ -20,8 +20,19 @@ export async function GET(request: Request) {
     }
     // Connected, but no account yet — following nothing is genuinely empty.
     if (!viewer.data) return NextResponse.json({ trades: [] });
-    return NextResponse.json({ trades: await getFeed({ viewerId: viewer.data, limit: 40 }) });
+    const trades = await getFeed({ viewerId: viewer.data, limit: 40 });
+    if (trades === null) {
+      return NextResponse.json({ error: "Feed is temporarily unavailable" }, { status: 503 });
+    }
+    return NextResponse.json({ trades });
   }
 
-  return NextResponse.json({ trades: await getFeed({ limit: 40 }) });
+  // The global feed has the same rule as the scoped one above: a DB that did not
+  // answer must not be served as an empty timeline, because the UI would render
+  // it as "No activity yet."
+  const trades = await getFeed({ limit: 40 });
+  if (trades === null) {
+    return NextResponse.json({ error: "Feed is temporarily unavailable" }, { status: 503 });
+  }
+  return NextResponse.json({ trades });
 }

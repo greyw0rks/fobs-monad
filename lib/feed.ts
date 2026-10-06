@@ -4,7 +4,7 @@
 // Token market figures on every trade are LIVE (lib/market.ts), overlaid at read
 // time; the trade's own amountUsd/priceUsd are the verified on-chain fill.
 
-import { tryDb } from "./db";
+import { dbQuery } from "./db";
 import type { Prisma } from "@prisma/client";
 import type { TradeDTO, TokenDTO } from "./types";
 import { getMarket, type MarketData } from "./market";
@@ -73,10 +73,18 @@ async function marketForRows(rows: TradeRow[]): Promise<Map<string, MarketData>>
   return symbols.length ? getMarket(symbols) : new Map();
 }
 
-/** Global or following-scoped trade timeline. */
-export async function getFeed(opts: { viewerId?: string | null; limit?: number } = {}): Promise<TradeDTO[]> {
+/**
+ * Global or following-scoped trade timeline.
+ *
+ * `null` means the DB did not answer. Callers must NOT render that as an empty
+ * feed — "No activity yet." would be a claim about the world when the truth is
+ * that we don't know. `[]` means genuinely no trades.
+ */
+export async function getFeed(
+  opts: { viewerId?: string | null; limit?: number } = {}
+): Promise<TradeDTO[] | null> {
   const limit = opts.limit ?? 40;
-  const rows = await tryDb(async (db) => {
+  const result = await dbQuery(async (db) => {
     let userIds: string[] | undefined;
     if (opts.viewerId) {
       const follows = await db.follow.findMany({
@@ -92,13 +100,17 @@ export async function getFeed(opts: { viewerId?: string | null; limit?: number }
       take: limit
     });
   });
-  if (!rows || rows.length === 0) return [];
+  if (!result.ok) return null;
+
+  const rows = result.data;
+  if (rows.length === 0) return [];
   const market = await marketForRows(rows);
   return rows.map((r) => toTradeDTO(r, market.get(r.token.symbol.toUpperCase())));
 }
 
-export async function getTokenActivity(tokenSymbol: string, limit = 30): Promise<TradeDTO[]> {
-  const rows = await tryDb((db) =>
+/** A token's recorded trades. `null` when the DB did not answer — see getFeed. */
+export async function getTokenActivity(tokenSymbol: string, limit = 30): Promise<TradeDTO[] | null> {
+  const result = await dbQuery((db) =>
     db.trade.findMany({
       where: { tokenSymbol },
       include: tradeInclude,
@@ -106,7 +118,10 @@ export async function getTokenActivity(tokenSymbol: string, limit = 30): Promise
       take: limit
     })
   );
-  if (!rows || rows.length === 0) return [];
+  if (!result.ok) return null;
+
+  const rows = result.data;
+  if (rows.length === 0) return [];
   const market = await marketForRows(rows);
   return rows.map((r) => toTradeDTO(r, market.get(r.token.symbol.toUpperCase())));
 }
