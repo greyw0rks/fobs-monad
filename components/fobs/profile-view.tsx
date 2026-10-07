@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSignMessage } from "wagmi";
 import Link from "next/link";
 import type { Route } from "next";
 import { useFobsAddress } from "./connect-wallet-button";
@@ -8,6 +9,7 @@ import { useTradeDrawer } from "./trade-drawer";
 import { TradeRow } from "./trade-row";
 import { Avatar, Num } from "./ui";
 import { money, price, pct, qty, compactNumber } from "@/lib/format";
+import { authorizeWrite, authAction } from "@/lib/auth-client";
 import type { ProfileDTO } from "@/lib/profile";
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -20,6 +22,7 @@ export function ProfileView({ username }: { username: string }) {
   const address = useFobsAddress();
   const { openTrade } = useTradeDrawer();
   const qc = useQueryClient();
+  const { signMessageAsync } = useSignMessage();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["profile", username, address],
@@ -28,16 +31,23 @@ export function ProfileView({ username }: { username: string }) {
 
   const follow = useMutation({
     mutationFn: async () => {
+      // The follow graph is a claim about a wallet, so the wallet signs it.
+      const auth = await authorizeWrite({
+        address: address!,
+        action: authAction.follow(username),
+        signMessageAsync
+      });
       const r = await fetch("/api/follow", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address, username })
+        body: JSON.stringify({ address, username, nonce: auth.nonce, signature: auth.signature })
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Follow failed");
       return r.json() as Promise<{ following: boolean }>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profile", username] })
   });
+
 
   if (isLoading) return <div className="p-8 text-center muted">Loading @{username}…</div>;
   if (isError || !data) return <div className="p-8 text-center muted">Trader @{username} not found.</div>;
@@ -70,13 +80,20 @@ export function ProfileView({ username }: { username: string }) {
           </div>
         </div>
         {address && (
-          <button
-            className={`btn ${isFollowedByViewer ? "" : "btn-primary"}`}
-            disabled={follow.isPending}
-            onClick={() => follow.mutate()}
-          >
-            {follow.isPending ? "…" : isFollowedByViewer ? "Following" : "Follow"}
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              className={`btn ${isFollowedByViewer ? "" : "btn-primary"}`}
+              disabled={follow.isPending}
+              onClick={() => follow.mutate()}
+            >
+              {follow.isPending ? "…" : isFollowedByViewer ? "Following" : "Follow"}
+            </button>
+            {follow.isError && (
+              <span className="muted" style={{ fontSize: "var(--t-xs)", maxWidth: 200, textAlign: "right" }}>
+                {(follow.error as Error).message}
+              </span>
+            )}
+          </div>
         )}
       </div>
 

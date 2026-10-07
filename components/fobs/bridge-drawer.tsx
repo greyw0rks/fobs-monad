@@ -13,11 +13,12 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { X, ArrowDown, Check, Loader2, Copy, ExternalLink, ArrowRightLeft } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useAccount, useBalance, useConfig, useSwitchChain } from "wagmi";
+import { useAccount, useBalance, useConfig, useSwitchChain, useSignMessage } from "wagmi";
 import { sendTransaction } from "wagmi/actions";
 import type { Address } from "viem";
 import { useFobsAddress } from "./connect-wallet-button";
 import { qty, txUrl, money } from "@/lib/format";
+import { authorizeWrite, authAction } from "@/lib/auth-client";
 import { BRIDGE_SOURCES, BRIDGE_DESTINATIONS, bridgeSourceById, type BridgeDestination } from "@/lib/bridge";
 import type { BridgeQuoteDTO, BridgeTransferDTO } from "@/lib/types";
 
@@ -66,6 +67,7 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
   const { chainId } = useAccount();
   const { switchChain } = useSwitchChain();
   const config = useConfig();
+  const { signMessageAsync } = useSignMessage();
 
   const [sourceId, setSourceId] = useState<number>(BRIDGE_SOURCES[0].id);
   const [dest, setDest] = useState<BridgeDestination>(initialDest);
@@ -209,6 +211,13 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
     let live = true;
     (async () => {
       try {
+        // Publishing a delivery is a claim about this wallet, so the wallet
+        // signs it — the same rule as the follow graph and the trade feed.
+        const auth = await authorizeWrite({
+          address,
+          action: authAction.publishBridge(originTxHash),
+          signMessageAsync
+        });
         const r = await fetch("/api/bridge/record", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -217,17 +226,21 @@ function BridgeDrawer({ initialDest, onClose }: { initialDest: BridgeDestination
             originChainId: quote.sourceId,
             originTxHash,
             requestId: quote.requestId,
-            destinationSymbol: quote.destSymbol
+            destinationSymbol: quote.destSymbol,
+            nonce: auth.nonce,
+            signature: auth.signature
           })
         });
         const d = await r.json();
         if (!live || !active.current) return;
         if (r.ok && d.recorded) setRecordNote(d.alreadyRecorded ? "Already in your feed" : "Added to your feed");
         else if (r.ok && d.recorded === false) setRecordNote(d.reason ?? null);
-        // A failed recording is deliberately quiet: the funds arrived regardless,
-        // and only the feed entry is missing.
-      } catch {
-        /* as above — delivery is unaffected */
+        // A failed recording is deliberately quiet — the funds arrived regardless
+        // — but a declined signature is the user's own choice, so it is named.
+        else if (!r.ok && typeof d.error === "string") setRecordNote(d.error);
+      } catch (e) {
+        if (!live || !active.current) return;
+        setRecordNote(e instanceof Error ? e.message : null);
       }
     })();
     return () => { live = false; };

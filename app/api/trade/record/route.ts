@@ -4,6 +4,8 @@ import { prisma, dbConfigured } from "@/lib/db";
 import { resolveUser } from "@/lib/session";
 import { verifySwap } from "@/lib/onchain";
 import { bySymbol, QUOTE_SYMBOL } from "@/lib/registry";
+import { authAction } from "@/lib/auth-message";
+import { verifyAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +13,18 @@ const Body = z.object({
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   symbol: z.string(),
-  side: z.enum(["BUY", "SELL"])
+  side: z.enum(["BUY", "SELL"]),
+  nonce: z.string(), // proof that `address` published this trade
+  signature: z.string()
 });
 
 // POST /api/trade/record — after the user's swap confirms on Monad, verify the
 // receipt on-chain and persist the real Trade. Amounts come from the chain, NOT
 // from client claims. Idempotent: a given txHash is recorded at most once.
+//
+// The receipt check already binds the tx to its sender, so a valid signature is
+// not what authenticates the TRADE — it authorises the WRITE, i.e. it is what
+// stops someone publishing another wallet's activity into that wallet's profile.
 export async function POST(request: Request) {
   if (!dbConfigured) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
@@ -24,6 +32,15 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const { txHash, symbol, side } = parsed.data;
   const address = parsed.data.address.toLowerCase();
+
+  const auth = await verifyAuth({
+    address: parsed.data.address,
+    action: authAction.publishTrade(txHash),
+    nonce: parsed.data.nonce,
+    signature: parsed.data.signature
+  });
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
 
   const existing = await prisma.trade.findUnique({ where: { txHash } }).catch(() => null);
   if (existing) {

@@ -2,15 +2,21 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, dbConfigured } from "@/lib/db";
 import { resolveUser } from "@/lib/session";
+import { authAction } from "@/lib/auth-message";
+import { verifyAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  address: z.string(),
-  username: z.string() // the trader to follow/unfollow
+  address: z.string(), // the wallet acting
+  username: z.string(), // the trader to follow/unfollow
+  nonce: z.string(), // proof that `address` authorised this toggle
+  signature: z.string()
 });
 
 // POST /api/follow — toggles the follow edge, returns the new state.
+// Signed: the follow graph is the social claim, so a write to it has to be
+// authorised by the wallet it is attributed to.
 export async function POST(request: Request) {
   if (!dbConfigured) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
@@ -18,8 +24,13 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
   try {
-    const me = await resolveUser(parsed.data.address);
-    const target = await prisma.user.findUnique({ where: { username: parsed.data.username.toLowerCase() } });
+    const { address, username, nonce, signature } = parsed.data;
+    const auth = await verifyAuth({ address, action: authAction.follow(username), nonce, signature });
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+    const me = await resolveUser(address);
+    const target = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
+
     if (!target) return NextResponse.json({ error: "Trader not found" }, { status: 404 });
     if (target.id === me.id) return NextResponse.json({ error: "Cannot follow yourself" }, { status: 400 });
 

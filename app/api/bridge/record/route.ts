@@ -6,6 +6,8 @@ import { resolveUser } from "@/lib/session";
 import { bridgeSourceById, BRIDGE_DESTINATIONS } from "@/lib/bridge";
 import { getRelayStatus } from "@/lib/relay";
 import { verifyOriginSpend, verifyDestinationCredit } from "@/lib/bridge-verify";
+import { authAction } from "@/lib/auth-message";
+import { verifyAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +21,9 @@ const Body = z.object({
   // provider, never accepted from the client — that is what ties the leg we
   // credit to the specific bridge request the user started.
   requestId: z.string().regex(HASH),
-  destinationSymbol: z.enum(BRIDGE_DESTINATIONS)
+  destinationSymbol: z.enum(BRIDGE_DESTINATIONS),
+  nonce: z.string(), // proof that `address` published this bridge
+  signature: z.string()
 });
 
 // POST /api/bridge/record — a bridge delivered tokens to the user on Monad.
@@ -33,6 +37,14 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const { originChainId, originTxHash, requestId, destinationSymbol } = parsed.data;
   const address = parsed.data.address.toLowerCase() as `0x${string}`;
+
+  const auth = await verifyAuth({
+    address: parsed.data.address,
+    action: authAction.publishBridge(originTxHash),
+    nonce: parsed.data.nonce,
+    signature: parsed.data.signature
+  });
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const source = bridgeSourceById(originChainId);
   if (!source) return NextResponse.json({ error: `Unknown source chain ${originChainId}` }, { status: 400 });

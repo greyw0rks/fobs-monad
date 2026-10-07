@@ -193,6 +193,6 @@ export type SwapStatus =
   | "APPROVING" // user signing the ERC20 approval
   | "SIGNING" // user signing the swap
   | "SUBMITTED" // tx broadcast, awaiting inclusion
-  | "CONFIRMING" // mined, awaiting our receipt verification
+  | "CONFIRMING" // mined; wallet signs the publish, then the server verifies the receipt
   | "CONFIRMED"
   | "FAILED";
