@@ -5,13 +5,14 @@ import Link from "next/link";
 import type { Route } from "next";
 import { X, ArrowDown, Check, Loader2, Share2, Copy, ExternalLink, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useAccount, useBalance, useConfig, useSwitchChain } from "wagmi";
+import { useAccount, useBalance, useConfig, useSwitchChain, useSignMessage } from "wagmi";
 import { sendTransaction, writeContract, waitForTransactionReceipt, readContract } from "wagmi/actions";
 import { erc20Abi, type Address } from "viem";
 import { useFobsAddress, useOnMonad } from "./connect-wallet-button";
 import { useBridgeDrawer } from "./bridge-drawer";
 import { Num } from "./ui";
 import { money, qty, compactNumber, txUrl } from "@/lib/format";
+import { authorizeWrite, authAction } from "@/lib/auth-client";
 import { bySymbol, QUOTE_SYMBOL } from "@/lib/registry";
 import { MONAD_CHAIN_ID } from "@/lib/wagmi";
 import type { TokenDTO, SwapQuoteDTO, SwapStatus } from "@/lib/types";
@@ -55,6 +56,7 @@ function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; on
   const { chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const config = useConfig();
+  const { signMessageAsync } = useSignMessage();
 
   const [token, setToken] = useState<TokenDTO | null>(null);
   const [amount, setAmount] = useState(side === "BUY" ? "100" : "");
@@ -64,7 +66,13 @@ function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; on
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("form");
   const [status, setStatus] = useState<SwapStatus>("IDLE");
-  const [result, setResult] = useState<{ tradeId: string | null; txHash: string; amountToken: number; amountUsd: number } | null>(null);
+  const [result, setResult] = useState<{
+    tradeId: string | null;
+    txHash: string;
+    amountToken: number;
+    amountUsd: number;
+    publishNote: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const active = useRef(true);
   useEffect(() => () => { active.current = false; }, []);
@@ -180,29 +188,47 @@ function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; on
       const receipt = await waitForTransactionReceipt(config, { hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted on-chain");
 
-      // 3. Record — the server verifies the receipt and derives the real amounts.
+      // 3. Publish — sign that this wallet owns the trade, then the server
+      // re-reads the receipt and derives the real amounts from the chain.
       setStatus("CONFIRMING");
       let tradeId: string | null = null;
       let amountToken = quote.buyAmountToken;
       let amountUsd = quote.sellAmountToken;
+      let publishNote: string | null = null;
       try {
+        const auth = await authorizeWrite({
+          address: address!,
+          action: authAction.publishTrade(hash),
+          signMessageAsync
+        });
         const r = await fetch("/api/trade/record", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ txHash: hash, address, symbol, side })
+          body: JSON.stringify({
+            txHash: hash,
+            address,
+            symbol,
+            side,
+            nonce: auth.nonce,
+            signature: auth.signature
+          })
         });
         const d = await r.json();
         if (r.ok) {
           tradeId = d.tradeId;
           amountToken = d.amountToken;
           amountUsd = d.amountUsd;
+        } else {
+          publishNote = d.error ?? "Could not add this trade to your feed";
         }
-      } catch {
-        /* recorded is best-effort; the swap is already on-chain */
+      } catch (e) {
+        // The swap is already on-chain either way; only the feed entry is at
+        // stake, so this must never fail the trade — but it must be SAID.
+        publishNote = e instanceof Error ? e.message : "Could not add this trade to your feed";
       }
 
       if (!active.current) return;
-      setResult({ tradeId, txHash: hash, amountToken, amountUsd });
+      setResult({ tradeId, txHash: hash, amountToken, amountUsd, publishNote });
       setStatus("CONFIRMED");
       setPhase("done");
     } catch (e) {
@@ -440,17 +466,13 @@ function ExecutingView({ status, quote, symbol }: { status: SwapStatus; quote: S
     ...(needsApproval ? [{ key: "APPROVING" as SwapStatus, label: `Approve ${quote?.sellSymbol ?? ""}`, gated: true }] : []),
     { key: "SIGNING", label: "Sign the swap in your wallet", gated: true },
     { key: "SUBMITTED", label: "Confirming on Monad", gated: false },
+    { key: "CONFIRMING", label: "Publish to your feed", gated: true },
     { key: "CONFIRMED", label: "Done", gated: false }
   ];
 
-  // Which stage are we at? SUBMITTED and CONFIRMING share the "Confirming" node.
-  const order = stages.map((s) => s.key);
-  const currentIdx =
-    status === "CONFIRMED"
-      ? stages.length
-      : status === "CONFIRMING"
-        ? order.indexOf("SUBMITTED")
-        : order.indexOf(status);
+  // Which stage are we at?
+  const order = stages.map((s) => s.key) as SwapStatus[];
+  const currentIdx = status === "CONFIRMED" ? stages.length : order.indexOf(status);
 
   return (
     <div className="flex flex-col gap-4 pt-6">
@@ -499,7 +521,13 @@ function DoneView({
 }: {
   symbol: string;
   side: Side;
-  result: { tradeId: string | null; txHash: string; amountToken: number; amountUsd: number };
+  result: {
+    tradeId: string | null;
+    txHash: string;
+    amountToken: number;
+    amountUsd: number;
+    publishNote: string | null;
+  };
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -563,7 +591,7 @@ function DoneView({
 
       {!result.tradeId && (
         <p className="faint text-center" style={{ fontSize: "var(--t-xs)" }}>
-          The swap is on-chain. It couldn&apos;t be added to the activity feed (database unavailable).
+          The swap is on-chain. {result.publishNote ?? "It couldn't be added to the activity feed."}
         </p>
       )}
 

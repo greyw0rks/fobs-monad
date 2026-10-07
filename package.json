@@ -10,6 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:pnl": "tsx tests/pnl.ts",
+    "test:auth": "tsx tests/auth.ts",
     "prisma": "prisma",
     "db:push": "prisma db push",
     "seed": "tsx prisma/seed-registry.ts"

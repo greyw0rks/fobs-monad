@@ -142,3 +142,21 @@ model Notification {
 
   @@index([recipientId, read])
 }
+
+// A single-use challenge for signature auth. Writes are authorised by the
+// wallet that owns them: the client asks for a nonce, signs `message` verbatim,
+// and the route verifies the signature against this stored copy — never against
+// a client-supplied one. Single-use, so a captured signature cannot be replayed,
+// and bound to `action`, so a signature for one target cannot authorise another.
+model AuthNonce {
+  nonce     String    @id // 32 random bytes, hex
+  address   String // the wallet the nonce was issued to, lowercased
+  action    String // e.g. "follow:@alice" — must match the request being made
+  message   String // the exact string the client was told to sign
+  expiresAt DateTime
+  usedAt    DateTime? // set atomically on first successful verification
+  createdAt DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+

@@ -146,6 +146,17 @@ says how narrow:
 - The exact token, amount, minimum received (slippage) and fees are shown before
   the user signs. Trade amounts are trusted from the on-chain receipt, not from
   the client.
+- **Writes are signed.** Following a trader and publishing a trade or a bridge
+  into the feed each require a signature from the wallet they act for — nobody
+  can write into your profile on your behalf. The client asks for a one-time
+  challenge, the server stores the exact message it will accept and verifies the
+  signature against *its own* copy rather than a client-supplied one, and the
+  challenge is bound to one action (`follow:@alice` cannot authorise a follow of
+  @bob) and spent once, atomically. No password, no session cookie, no new
+  server secret.
+- Failures never masquerade as verdicts: a database that cannot be reached
+  reports 503, not 401, because "we could not check" is not the same claim as
+  "you are not who you say you are".
 - No custom fund-touching contract is deployed. If that ever changes, a
   professional audit comes first.
 
@@ -153,7 +164,8 @@ says how narrow:
 
 - **M1 — trading:** mainnet config, live market data, Kuru-routed quotes with an
   automatic 0x fallback, client-signed execution, receipt-verified trade
-  records, live on-chain portfolio.
+  records, live on-chain portfolio. Every write is wallet-signed (see
+  **Security**).
 - **M2 — chain-wide indexer:** an Envio HyperIndex deployment indexes ERC20
   activity for the registry tokens, surfaced on token pages as **Chain
   activity** — a *transfers* read model, kept separate from the trade feed. The
@@ -168,6 +180,11 @@ says how narrow:
 
 Stated plainly, because these are gaps rather than features:
 
+- **No real user has written anything yet.** The signed-write path is exercised
+  end to end against the live server with real signatures — every rejection
+  (replay, wrong wallet, expired, redirected action) and the accepted path —
+  but with a throwaway wallet, so no real follow, trade or bridge has ever been
+  recorded through the UI.
 - **No trade has ever been recorded.** The database holds zero trades, so the
   cost basis has never run against real history — only the arithmetic is tested
   (9 hand-computed cases) and the wiring is verified up to the point where

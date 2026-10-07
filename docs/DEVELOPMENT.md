@@ -13,6 +13,7 @@ pnpm db:push           # push the schema
 pnpm seed              # load the verified token registry (no market numbers)
 pnpm dev               # http://localhost:3000  (on WSL2 use: pnpm dev:wsl)
 pnpm test:pnl          # cost-basis arithmetic (no DB, no network)
+pnpm test:auth         # signature-challenge rules (no DB, no network)
 ```
 
 ## Environment
@@ -35,6 +36,7 @@ pnpm test:pnl          # cost-basis arithmetic (no DB, no network)
 ```bash
 pnpm typecheck     # tsc --noEmit
 pnpm test:pnl      # cost-basis cases
+pnpm test:auth     # signature-challenge cases
 pnpm build         # prisma generate && next build
 ```
 
@@ -58,6 +60,20 @@ the ordering. Deployed builds are unaffected.
 
 ## Notes
 
+- **Writes are wallet-signed.** Three routes mutate: `POST /api/follow`,
+  `POST /api/trade/record`, `POST /api/bridge/record`. Each requires a
+  `nonce` + `signature` from the wallet it acts for, obtained from
+  `POST /api/auth/nonce`. The server stores the exact message it issued and
+  verifies against *its own* copy, so a client cannot sign one thing and claim
+  another; the challenge is bound to one action label, recomputed by the route
+  from its parsed body; and it is claimed once, atomically
+  (`AuthNonce.updateMany({ where: { nonce, usedAt: null } })`, requiring
+  `count === 1`). The pure half lives in `lib/auth-message.ts` (shared with the
+  client, covered by `pnpm test:auth`); the DB half in `lib/auth.ts`
+  (`server-only`). `AuthNonce` rows are pruned per-wallet on the next issue.
+  Adding a fourth mutating route means adding an `authAction` label and a
+  `isValidAuthAction` branch — otherwise the challenge endpoint will refuse to
+  issue for it.
 - Run anything touching Postgres, and `pnpm dev`, with the command sandbox
   **disabled** (egress on 5432 is blocked; Google Fonts also fail sandboxed).
 - `tsconfig` targets **ES2017**: no `0n` BigInt literals (use `BigInt(0)`), and
