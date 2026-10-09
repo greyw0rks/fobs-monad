@@ -62,6 +62,71 @@ export type ChainActivityDTO = {
   source: "envio";
 };
 
+// A real fill on a Kuru OrderBook, decoded from the raw event into human
+// numbers. Distinct from TradeDTO: that is a trade *this app* recorded (with a
+// trader profile behind it), while this is chain-wide market activity that
+// happened whether or not anyone here was watching.
+//
+// The price and size fields are `null` together when the market's scaling could
+// not be established — the raw fill is real, but a number we cannot scale is not
+// something to render.
+export type KuruTradeDTO = {
+  id: string;
+  market: string; // OrderBook address
+  baseSymbol: string | null; // null when the pair is unknown, never guessed
+  quoteSymbol: string | null;
+  isBuy: boolean; // the maker's side
+  maker: string;
+  taker: string;
+  priceQuotePerBase: number | null; // e.g. 0.025647 USDC per MON
+  baseAmount: number | null; // e.g. 904.699 MON
+  quoteAmount: number | null; // e.g. 23.202816 USDC
+  blockNumber: number;
+  timestamp: number; // unix seconds
+};
+
+// One wallet's participation in the Kuru fills the indexer holds. `role` says
+// whether the wallet was the resting order (maker) or the one that crossed it.
+export type WalletFillDTO = {
+  id: string;
+  market: string;
+  baseSymbol: string | null;
+  quoteSymbol: string | null;
+  isBuy: boolean; // the maker's side; the taker took the other side
+  role: "maker" | "taker";
+  priceQuotePerBase: number | null;
+  baseAmount: number | null;
+  quoteAmount: number | null;
+  blockNumber: number;
+  timestamp: number;
+};
+
+export type WalletFillsDTO = {
+  address: string;
+  fills: WalletFillDTO[]; // newest first; only markets whose scaling is verified
+  fillsCounted: number; // total matching fills, decoded or not
+  windowStartBlock: number; // the indexer's `start_block` — history before it is out of scope
+  source: "envio";
+};
+
+// Rank of wallets by notional across the Kuru fills the indexer holds.
+// Distinct from the app's own traders: this is everyone who traded the market,
+// whether or not they have a profile here.
+export type LeaderboardEntryDTO = {
+  wallet: string;
+  fills: number;
+  buyFills: number;
+  sellFills: number;
+  volumeUsd: number; // decoded quote notional; 0 when nothing could be decoded
+  lastActive: number; // unix seconds of the newest counted fill
+};
+
+export type LeaderboardDTO = {
+  entries: LeaderboardEntryDTO[];
+  fillsCounted: number; // how many fills the ranking walked
+  source: "envio";
+};
+
 export type SignalDTO = {
   score: number; // 0–100, Fobs' own metric
   volumeUsd: number;

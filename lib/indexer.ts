@@ -13,7 +13,9 @@
 import "server-only";
 import { formatUnits } from "viem";
 import { fetchWithRetry } from "./http";
-import type { ChainActivityDTO, ChainTransferDTO } from "./types";
+import { REGISTRY } from "./registry";
+import { decodeKuruFill, VERIFIED_MARKETS, type KuruMarketPrecision } from "./kuru-fill";
+import type { ChainActivityDTO, ChainTransferDTO, KuruTradeDTO } from "./types";
 
 /**
  * The deployed indexer's GraphQL endpoint (Envio Cloud, `envio` branch, root
@@ -165,4 +167,120 @@ export async function getChainActivity(
     lastIndexedAt: stats.lastUpdated,
     source: "envio"
   };
+}
+
+// ---------------------------------------------------------------------------
+// Kuru fills — real trades, as opposed to transfers.
+//
+// A `KuruTrade` is a fill on an OrderBook: someone's order met someone else's.
+// That is a categorically different fact from an ERC20 transfer, which is why it
+// gets its own read model and its own card rather than being folded into the
+// activity list above.
+// ---------------------------------------------------------------------------
+
+type KuruTradeRow = {
+  id: string;
+  market: string;
+  baseAsset: string | null;
+  quoteAsset: string | null;
+  maker: string;
+  taker: string;
+  isBuy: boolean;
+  price: string;
+  filledSize: string;
+  updatedSize: string;
+  blockNumber: number;
+  timestamp: number;
+};
+
+type KuruMarketRow = { pricePrecision: string; sizePrecision: string };
+
+/**
+ * The scaling for one market: the verified constant for a market that predates
+ * the indexer's window, otherwise whatever the Router declared when it
+ * registered the market. `null` when neither is available — in which case the
+ * fill is still returned, with its numbers left unset rather than invented.
+ */
+async function getMarketPrecision(market: string): Promise<KuruMarketPrecision | null> {
+  const known = VERIFIED_MARKETS[market.toLowerCase()];
+  if (known) return known;
+  return cached(`kuruMarket:${market.toLowerCase()}`, async () => {
+    const data = await gql<{ KuruMarket: KuruMarketRow[] }>(
+      `query ($m: String!) {
+         KuruMarket(where: { id: { _eq: $m } }, limit: 1) { pricePrecision sizePrecision }
+       }`,
+      { m: market.toLowerCase() }
+    );
+    const row = data?.KuruMarket[0];
+    if (!row) return null;
+    try {
+      return { pricePrecision: BigInt(row.pricePrecision), sizePrecision: BigInt(row.sizePrecision) };
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** The zero address, as the Router records a native-mon base asset. */
+const NATIVE_SENTINEL = "0x0000000000000000000000000000000000000000";
+
+/**
+ * Symbol for an on-chain asset address, or null when it is not one we know — a
+ * pair we cannot name stays unnamed rather than being labelled with a guess.
+ * The zero address is the Router's native-MON sentinel, so it resolves to the
+ * registry's native token.
+ */
+export function assetSymbol(address: string | null): string | null {
+  if (!address) return null;
+  const want = address.toLowerCase();
+  if (want === NATIVE_SENTINEL) return REGISTRY.find((t) => t.isNative)?.symbol ?? null;
+  return REGISTRY.find((t) => t.address.toLowerCase() === want)?.symbol ?? null;
+}
+
+/**
+ * The newest Kuru fills on one market, decoded. `null` means the read failed —
+ * which is not the same as an empty market, and the caller renders them
+ * differently.
+ */
+export async function getKuruTrades(market: string, limit = 12): Promise<KuruTradeDTO[] | null> {
+  const [rows, precision] = await Promise.all([
+    cached(`kuruTrades:${market.toLowerCase()}:${limit}`, async () => {
+      const data = await gql<{ KuruTrade: KuruTradeRow[] }>(
+        `query ($m: String!, $n: Int!) {
+           KuruTrade(where: { market: { _eq: $m } }, order_by: { blockNumber: desc }, limit: $n) {
+             id market baseAsset quoteAsset maker taker isBuy price filledSize updatedSize blockNumber timestamp
+           }
+         }`,
+        { m: market.toLowerCase(), n: limit }
+      );
+      return data ? data.KuruTrade : null;
+    }),
+    getMarketPrecision(market)
+  ]);
+  if (!rows) return null;
+
+  return rows.map((row) => {
+    const decoded = precision
+      ? decodeKuruFill(
+          { price: row.price, filledSize: row.filledSize, updatedSize: row.updatedSize },
+          precision
+        )
+      : null;
+    return {
+      id: row.id,
+      market: row.market,
+      baseSymbol: assetSymbol(row.baseAsset),
+      quoteSymbol: assetSymbol(row.quoteAsset),
+      isBuy: row.isBuy,
+      maker: row.maker,
+      taker: row.taker,
+      // Together or not at all: a price without a size, or a size without a
+      // price, would invite someone to multiply two half-facts.
+      priceQuotePerBase: decoded?.priceQuotePerBase ?? null,
+      baseAmount: decoded?.baseAmount ?? null,
+      quoteAmount: decoded?.quoteAmount ?? null,
+      blockNumber: row.blockNumber,
+      timestamp: row.timestamp
+    };
+  });
 }

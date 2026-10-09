@@ -6,7 +6,7 @@ import { TradeRow } from "./trade-row";
 import { PriceChart } from "./price-chart";
 import { Avatar, Num, SignalBar } from "./ui";
 import { price, pct, compactMoney, compactNumber, money, ago, shortAddress, addressUrl } from "@/lib/format";
-import type { TokenDTO, TradeDTO, SignalDTO, ChainActivityDTO } from "@/lib/types";
+import type { TokenDTO, TradeDTO, SignalDTO, ChainActivityDTO, KuruTradeDTO } from "@/lib/types";
 
 type TokenResp = {
   token: TokenDTO;
@@ -17,6 +17,10 @@ type TokenResp = {
   // Raw on-chain ERC20 transfers (Envio) — null when the indexer is
   // unconfigured or did not answer. Not the same thing as `activity`.
   chainActivity: ChainActivityDTO | null;
+  // Real OrderBook fills (Envio) — null when the indexer did not answer, or when
+  // it carries no KuruTrade entity yet. Either way the card is absent.
+  kuruTrades: KuruTradeDTO[] | null;
+  kuruMarket: { address: string; baseSymbol: string | null; quoteSymbol: string | null } | null;
 };
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -36,7 +40,7 @@ export function TokenView({ symbol }: { symbol: string }) {
   if (isLoading) return <div className="p-8 text-center muted">Loading {symbol}…</div>;
   if (isError || !data) return <div className="p-8 text-center muted">Token {symbol} not found.</div>;
 
-  const { token, activity, signal, smartMoney, chainActivity } = data;
+  const { token, activity, signal, smartMoney, chainActivity, kuruTrades, kuruMarket } = data;
   const up = token.change24h >= 0;
 
   return (
@@ -151,6 +155,68 @@ export function TokenView({ symbol }: { symbol: string }) {
           activity.map((t) => <TradeRow key={t.id} trade={t} onTrade={openTrade} />)
         )}
       </div>
+
+      {/* Kuru order book — real fills. Distinct from both the app's own trade
+          feed and the transfer list below: this is somebody's order meeting
+          somebody else's, read off the chain. */}
+      {kuruTrades && kuruMarket && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b hairline flex items-center justify-between gap-3 flex-wrap">
+            <span className="eyebrow">Kuru order book</span>
+            <span className="chip">
+              {kuruMarket.baseSymbol ?? "?"} / {kuruMarket.quoteSymbol ?? "?"}
+            </span>
+          </div>
+
+          {kuruTrades.length === 0 ? (
+            <div className="p-6 text-center muted">No fills indexed on this market yet.</div>
+          ) : (
+            kuruTrades.map((t) => (
+              <div
+                key={t.id}
+                className="px-4 py-2.5 flex items-center justify-between gap-3 border-b hairline last:border-b-0 row-hover"
+                style={{ fontSize: "var(--t-sm)" }}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className={t.isBuy ? "up" : "down"} style={{ fontWeight: 600 }}>
+                    {t.isBuy ? "Buy" : "Sell"}
+                  </span>
+                  <a
+                    href={addressUrl(t.maker)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="num faint hover:underline truncate"
+                  >
+                    {shortAddress(t.maker)}
+                  </a>
+                </span>
+                <span className="flex items-center gap-3 shrink-0 num">
+                  {/* A price and a size that could not be scaled render as an
+                      em dash, never as a zero. */}
+                  <span className="muted">{price(t.priceQuotePerBase)}</span>
+                  <span>
+                    {t.baseAmount === null ? (
+                      <span className="faint">—</span>
+                    ) : (
+                      <>
+                        {compactNumber(t.baseAmount)} {kuruMarket.baseSymbol}
+                      </>
+                    )}
+                  </span>
+                  <span className="faint" style={{ fontSize: "var(--t-xs)" }}>
+                    {ago(new Date(t.timestamp * 1000))}
+                  </span>
+                </span>
+              </div>
+            ))
+          )}
+
+          <p className="px-4 py-3 faint border-t hairline" style={{ fontSize: "var(--t-xs)" }}>
+            Fills on the Kuru {kuruMarket.baseSymbol ?? "?"}/{kuruMarket.quoteSymbol ?? "?"} order book,
+            indexed by Envio — a matched trade, not a transfer.
+          </p>
+        </div>
+      )}
 
       {/* Chain-wide activity — raw ERC20 transfers from the Envio indexer. Kept
           distinct from the trade feed above: a transfer is not a trade. */}
