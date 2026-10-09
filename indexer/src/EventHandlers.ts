@@ -58,10 +58,81 @@ indexer.onEvent({ contract: "ERC20", event: "Transfer" }, async ({ event, contex
   await bump(to, false);
 });
 
-// Kuru swap indexing — the OrderBook emits
-//   Trade(uint40 orderId, address indexed maker, bool isBuy, uint32 price,
-//         uint96 updatedSize, address indexed taker, address indexed origin,
-//         uint96 filledSize)
-// on each market (discovered via the Router's MarketRegistered). Left out until
-// the signature is verified against the deployed OrderBook: shipping a guessed
-// ABI would silently index nothing. See indexer/README.md.
+// Kuru swap indexing. The OrderBook emits
+//   Trade(uint40 orderId, address maker, bool isBuy, uint256 price,
+//         uint96 updatedSize, address taker, address origin, uint96 filledSize)
+// on each market, with NO argument indexed (verified against live logs — the
+// published docs show a `uint32 price` with indexed args and are simply wrong).
+//
+// These numbers are stored RAW — exactly as emitted, so no precision is lost
+// here. The scaling into human numbers is established and tested, but it lives
+// in one place in the app (../lib/kuru-fill.ts), not here: the indexer's job is
+// to hold the exact fill (count, direction, counterparties, market, raw price
+// and sizes), and the app's job is to read it. Keeping the division out of the
+// indexer keeps a redeploy from re-encoding a scaling rule into stored data.
+
+/** A verified pair for a market registered before the indexer's start block. */
+const SEEDED_MARKETS: Record<string, { base: string; quote: string }> = {
+  // Decoded from the Router's own MarketRegistered log in this market's creation
+  // tx (0x85f4b267…, block 43,660,999) — read off the chain, not from a docs page.
+  "0x065c9d28e428a0db40191a54d33d5b7c71a9c394": {
+    base: "0x0000000000000000000000000000000000000000", // native MON
+    quote: "0x754704bc059f8c67012fed69bc8a327a5aafb603" // USDC
+  }
+};
+
+indexer.onEvent({ contract: "KuruRouter", event: "MarketRegistered" }, async ({ event, context }) => {
+  const market = event.params.market.toLowerCase();
+  const existing = await context.KuruMarket.get(market);
+  context.KuruMarket.set({
+    id: market,
+    baseAsset: event.params.baseAsset.toLowerCase(),
+    quoteAsset: event.params.quoteAsset.toLowerCase(),
+    vault: event.params.vaultAddress.toLowerCase(),
+    pricePrecision: event.params.pricePrecision,
+    sizePrecision: event.params.sizePrecision,
+    tickSize: event.params.tickSize,
+    minSize: event.params.minSize,
+    maxSize: event.params.maxSize,
+    takerFeeBps: event.params.takerFeeBps,
+    makerFeeBps: event.params.makerFeeBps,
+    kuruAmmSpread: event.params.kuruAmmSpread,
+    registeredAt: event.block.timestamp,
+    trades: existing?.trades ?? 0
+  });
+});
+
+indexer.onEvent({ contract: "KuruOrderBook", event: "Trade" }, async ({ event, context }) => {
+  const market = event.srcAddress.toLowerCase();
+  const blockNumber = event.block.number;
+
+  // Resolve the pair: the Router's own declaration if we indexed it, otherwise
+  // the verified constant for a market that predates `start_block`. Anything
+  // else stays null rather than being labelled with a guessed pair.
+  const declared = await context.KuruMarket.get(market);
+  const seeded = SEEDED_MARKETS[market];
+  const baseAsset = declared?.baseAsset ?? seeded?.base ?? undefined;
+  const quoteAsset = declared?.quoteAsset ?? seeded?.quote ?? undefined;
+
+  context.KuruTrade.set({
+    id: `${event.chainId}_${blockNumber}_${event.logIndex}`,
+    market,
+    baseAsset,
+    quoteAsset,
+    orderId: event.params.orderId,
+    maker: event.params.maker.toLowerCase(),
+    taker: event.params.taker.toLowerCase(),
+    origin: event.params.origin.toLowerCase(),
+    isBuy: event.params.isBuy,
+    price: event.params.price,
+    updatedSize: event.params.updatedSize,
+    filledSize: event.params.filledSize,
+    blockNumber,
+    timestamp: event.block.timestamp
+  });
+
+  if (declared) {
+    context.KuruMarket.set({ ...declared, trades: declared.trades + 1 });
+  }
+});
+

@@ -34,3 +34,45 @@ type WalletTokenStats {
   transfers: Int!
   lastUpdated: Int!
 }
+
+# A real fill on a Kuru OrderBook — an actual trade, as opposed to a transfer.
+#
+# Every numeric field here is stored EXACTLY as the contract emitted it. No
+# human amount, no USD value, no unit conversion: the scaling of `price` and the
+# sizes has not been established (see indexer/README.md), and a converted number
+# would be a guess wearing a decimal point.
+type KuruTrade {
+  id: ID! # "{chainId}_{block}_{logIndex}"
+  market: String! # lowercased OrderBook address
+  baseAsset: String # lowercased; null when the pair could not be resolved
+  quoteAsset: String # lowercased; null when the pair could not be resolved
+  orderId: BigInt!
+  maker: String! # lowercased
+  taker: String! # lowercased
+  origin: String! # lowercased — the account the order was placed for
+  isBuy: Boolean! # true when the maker bought the base asset
+  price: BigInt! # RAW uint256 from the event
+  updatedSize: BigInt! # RAW uint96 — the maker's remaining size after the fill
+  filledSize: BigInt! # RAW uint96 — the size filled by this trade
+  blockNumber: Int!
+  timestamp: Int!
+}
+
+# A market as the Router itself declared it. These precision fields are the raw
+# material needed to interpret a KuruTrade's numbers later.
+type KuruMarket {
+  id: ID! # lowercased OrderBook address
+  baseAsset: String! # 0x0 for native MON
+  quoteAsset: String!
+  vault: String!
+  pricePrecision: BigInt!
+  sizePrecision: BigInt!
+  tickSize: BigInt!
+  minSize: BigInt!
+  maxSize: BigInt!
+  takerFeeBps: BigInt!
+  makerFeeBps: BigInt!
+  kuruAmmSpread: BigInt!
+  registeredAt: Int!
+  trades: Int! # fills indexed on this market
+}
