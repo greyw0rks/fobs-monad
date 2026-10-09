@@ -18,9 +18,9 @@ import { MONAD_CHAIN_ID } from "@/lib/wagmi";
 import type { TokenDTO, SwapQuoteDTO, SwapStatus } from "@/lib/types";
 
 type Side = "BUY" | "SELL";
-type DrawerState = { symbol: string; side: Side } | null;
+type DrawerState = { symbol: string; side: Side; amount?: string } | null;
 
-type Ctx = { openTrade: (symbol: string, side?: Side) => void };
+type Ctx = { openTrade: (symbol: string, side?: Side, amount?: string) => void };
 const TradeDrawerCtx = createContext<Ctx>({ openTrade: () => {} });
 export const useTradeDrawer = () => useContext(TradeDrawerCtx);
 
@@ -34,14 +34,25 @@ const QUOTE_TOKEN = bySymbol(QUOTE_SYMBOL)!; // USDC — the funding/quote leg
 
 export function TradeDrawerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DrawerState>(null);
-  const openTrade = useCallback((symbol: string, side: Side = "BUY") => setState({ symbol, side }), []);
+  const openTrade = useCallback(
+    (symbol: string, side: Side = "BUY", amount?: string) => setState({ symbol, side, amount }),
+    []
+  );
   const close = useCallback(() => setState(null), []);
 
   return (
     <TradeDrawerCtx.Provider value={{ openTrade }}>
       {children}
       <AnimatePresence>
-        {state && <TradeDrawer key={state.symbol + state.side} symbol={state.symbol} side={state.side} onClose={close} />}
+        {state && (
+          <TradeDrawer
+            key={state.symbol + state.side}
+            symbol={state.symbol}
+            side={state.side}
+            initialAmount={state.amount}
+            onClose={close}
+          />
+        )}
       </AnimatePresence>
     </TradeDrawerCtx.Provider>
   );
@@ -49,7 +60,17 @@ export function TradeDrawerProvider({ children }: { children: React.ReactNode })
 
 type Phase = "form" | "executing" | "done";
 
-function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; onClose: () => void }) {
+function TradeDrawer({
+  symbol,
+  side,
+  initialAmount,
+  onClose
+}: {
+  symbol: string;
+  side: Side;
+  initialAmount?: string;
+  onClose: () => void;
+}) {
   const address = useFobsAddress();
   const onMonad = useOnMonad();
   const { openBridge } = useBridgeDrawer();
@@ -59,7 +80,7 @@ function TradeDrawer({ symbol, side, onClose }: { symbol: string; side: Side; on
   const { signMessageAsync } = useSignMessage();
 
   const [token, setToken] = useState<TokenDTO | null>(null);
-  const [amount, setAmount] = useState(side === "BUY" ? "100" : "");
+  const [amount, setAmount] = useState(initialAmount ?? (side === "BUY" ? "100" : ""));
   const [slippageBps, setSlippageBps] = useState(50);
   const [quote, setQuote] = useState<SwapQuoteDTO | null>(null);
   const [quoting, setQuoting] = useState(false);
